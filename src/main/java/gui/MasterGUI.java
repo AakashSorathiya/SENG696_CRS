@@ -1,62 +1,101 @@
 package gui;
 
-import javax.swing.*;
-import java.awt.*;
+// MasterGUI.java
 import agents.MasterAgent;
 
+// MasterGUI.java
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+
 public class MasterGUI extends JFrame {
-    private final MasterAgent agent;
-    private JPanel mainPanel;
+    private MasterAgent myAgent;
+    private JTextArea logArea;
 
     public MasterGUI(MasterAgent agent) {
-        this.agent = agent;
-        setupGUI();
+        super("Car Rental System - Master Control");
+        this.myAgent = agent;
+
+        // Main panel
+        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        // Title Panel
+        JPanel titlePanel = new JPanel();
+        JLabel titleLabel = new JLabel("Car Rental System Control Panel");
+        titleLabel.setFont(new Font("Arial", Font.BOLD, 20));
+        titlePanel.add(titleLabel);
+
+        // Buttons Panel
+        JPanel buttonPanel = new JPanel(new GridLayout(2, 2, 10, 10));
+        buttonPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+
+        // Create buttons with icons (you can add icons later)
+        addButton(buttonPanel, "Registration", "Manage customer registrations", 1);
+        addButton(buttonPanel, "Reservations", "Manage car reservations", 2);
+        addButton(buttonPanel, "Vehicle Management", "Manage vehicle inventory", 3);
+        addButton(buttonPanel, "Payments", "Process payments and refunds", 4);
+
+        // Log Panel
+        JPanel logPanel = new JPanel(new BorderLayout());
+        logPanel.setBorder(BorderFactory.createTitledBorder("System Log"));
+        logArea = new JTextArea(8, 40);
+        logArea.setEditable(false);
+        JScrollPane scrollPane = new JScrollPane(logArea);
+        logPanel.add(scrollPane);
+
+        // Add all panels to main panel
+        mainPanel.add(titlePanel, BorderLayout.NORTH);
+        mainPanel.add(buttonPanel, BorderLayout.CENTER);
+        mainPanel.add(logPanel, BorderLayout.SOUTH);
+
+        // Add main panel to frame
+        setContentPane(mainPanel);
+
+        // Window closing behavior
+        addWindowListener(new WindowAdapter() {
+            public void windowClosing(WindowEvent e) {
+                myAgent.doDelete();
+            }
+        });
+
+        // Basic frame settings
+        setResizable(false);
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
     }
 
-    private void setupGUI() {
-        setTitle("Car Rental System - Master Control");
-        setSize(800, 600);
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+    private void addButton(JPanel panel, String text, String tooltip, int choice) {
+        JButton button = new JButton(text);
+        button.setToolTipText(tooltip);
+        button.setPreferredSize(new Dimension(150, 60));
+        button.setFont(new Font("Arial", Font.PLAIN, 14));
 
-        mainPanel = new JPanel(new BorderLayout());
+        button.addActionListener(e -> {
+            updateLog("Selected: " + text);
+            myAgent.processRequest(choice);
+        });
 
-        // Add components
-        setupMenuBar();
-        setupMainPanel();
-
-        add(mainPanel);
+        panel.add(button);
     }
 
-    private void setupMenuBar() {
-        JMenuBar menuBar = new JMenuBar();
-
-        // File Menu
-        JMenu fileMenu = new JMenu("File");
-        JMenuItem exitItem = new JMenuItem("Exit");
-        exitItem.addActionListener(e -> System.exit(0));
-        fileMenu.add(exitItem);
-
-        // Agents Menu
-        JMenu agentsMenu = new JMenu("Agents");
-        JMenuItem startAllItem = new JMenuItem("Start All Agents");
-        JMenuItem stopAllItem = new JMenuItem("Stop All Agents");
-        agentsMenu.add(startAllItem);
-        agentsMenu.add(stopAllItem);
-
-        menuBar.add(fileMenu);
-        menuBar.add(agentsMenu);
-        setJMenuBar(menuBar);
+    public void updateLog(String message) {
+        SwingUtilities.invokeLater(() -> {
+            logArea.append(message + "\n");
+            logArea.setCaretPosition(logArea.getDocument().getLength());
+        });
     }
 
-    private void setupMainPanel() {
-        // Add status panel
-        JPanel statusPanel = new JPanel(new GridLayout(0, 2));
-        statusPanel.setBorder(BorderFactory.createTitledBorder("System Status"));
-        mainPanel.add(statusPanel, BorderLayout.NORTH);
+    public void display() {
+        pack();
+        centerOnScreen();
+        setVisible(true);
+    }
 
-        // Add monitoring panel
-        JPanel monitorPanel = new JPanel();
-        monitorPanel.setBorder(BorderFactory.createTitledBorder("Agent Monitoring"));
-        mainPanel.add(monitorPanel, BorderLayout.CENTER);
+    private void centerOnScreen() {
+        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+        setLocation(
+                (screenSize.width - getWidth()) / 2,
+                (screenSize.height - getHeight()) / 2
+        );
     }
 }

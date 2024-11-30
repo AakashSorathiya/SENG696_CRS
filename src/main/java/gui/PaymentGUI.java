@@ -1,202 +1,283 @@
 package gui;
 
+// PaymentGUI.java
+import agents.PaymentAgent;
+
 import javax.swing.*;
+import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.event.*;
+import java.util.*;
+import java.text.SimpleDateFormat;
 import java.util.List;
-import java.text.DecimalFormat;
-import agents.PaymentAgent;
-import models.Payment;
 
 public class PaymentGUI extends JFrame {
-    private PaymentAgent agent;
-    private JPanel mainPanel;
-    private JTable paymentTable;
+    private PaymentAgent myAgent;
+
+    private JTextField reservationIdField;
+    private JTextField amountField;
+    private JComboBox<String> paymentMethodComboBox;
+    private JTable paymentsTable;
     private DefaultTableModel tableModel;
-    private DecimalFormat currencyFormat;
+    private JTextArea statusArea;
+    private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
     public PaymentGUI(PaymentAgent agent) {
-        this.agent = agent;
-        this.currencyFormat = new DecimalFormat("#,##0.00");
-        setupGUI();
+        super("Car Rental System - Payment Management");
+        this.myAgent = agent;
+
+        // Main panel with spacing
+        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        // Create and add all panels
+        mainPanel.add(createPaymentPanel(), BorderLayout.NORTH);
+        mainPanel.add(createButtonPanel(), BorderLayout.CENTER);
+        mainPanel.add(createTablePanel(), BorderLayout.CENTER);
+        mainPanel.add(createStatusPanel(), BorderLayout.SOUTH);
+
+        // Set up frame
+        setContentPane(mainPanel);
+        setupWindowBehavior();
+        refreshPaymentTable();
     }
 
-    private void setupGUI() {
-        setTitle("Payment Management");
-        setSize(1000, 600);
-        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-
-        mainPanel = new JPanel(new BorderLayout());
-
-        // Create components
-        setupMenuBar();
-        setupPaymentForm();
-        setupPaymentTable();
-        setupStatusBar();
-
-        // Refresh payment list
-        refreshPaymentList();
-
-        add(mainPanel);
-    }
-
-    private void setupMenuBar() {
-        JMenuBar menuBar = new JMenuBar();
-
-        JMenu fileMenu = new JMenu("File");
-        JMenuItem refreshItem = new JMenuItem("Refresh");
-        refreshItem.addActionListener(e -> refreshPaymentList());
-        fileMenu.add(refreshItem);
-
-        JMenuItem exportItem = new JMenuItem("Export Report");
-        exportItem.addActionListener(e -> exportPaymentReport());
-        fileMenu.add(exportItem);
-
-        JMenuItem exitItem = new JMenuItem("Exit");
-        exitItem.addActionListener(e -> dispose());
-        fileMenu.add(exitItem);
-
-        menuBar.add(fileMenu);
-        setJMenuBar(menuBar);
-    }
-
-    private void setupPaymentForm() {
-        JPanel formPanel = new JPanel(new GridBagLayout());
-        formPanel.setBorder(BorderFactory.createTitledBorder("Process Payment"));
+    private JPanel createPaymentPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createTitledBorder("Payment Processing"));
         GridBagConstraints gbc = new GridBagConstraints();
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.insets = new Insets(5, 5, 5, 5);
 
-        // Booking ID
+        // Reservation ID
         gbc.gridx = 0; gbc.gridy = 0;
-        formPanel.add(new JLabel("Booking ID:"), gbc);
-
+        panel.add(new JLabel("Reservation ID:"), gbc);
         gbc.gridx = 1;
-        JTextField bookingIdField = new JTextField(10);
-        formPanel.add(bookingIdField, gbc);
+        reservationIdField = new JTextField(15);
+        panel.add(reservationIdField, gbc);
 
         // Amount
         gbc.gridx = 0; gbc.gridy = 1;
-        formPanel.add(new JLabel("Amount:"), gbc);
-
+        panel.add(new JLabel("Amount ($):"), gbc);
         gbc.gridx = 1;
-        JTextField amountField = new JTextField(10);
-        formPanel.add(amountField, gbc);
+        amountField = new JTextField(15);
+        panel.add(amountField, gbc);
 
-        // Buttons
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-
-        JButton processButton = new JButton("Process Payment");
-        processButton.addActionListener(e -> {
-            try {
-                int bookingId = Integer.parseInt(bookingIdField.getText());
-                double amount = Double.parseDouble(amountField.getText());
-
-                Payment payment = new Payment();
-                payment.setBookingId(bookingId);
-                payment.setAmount(amount);
-
-                boolean success = agent.processPayment(payment);
-                if (success) {
-                    JOptionPane.showMessageDialog(this, "Payment processed successfully");
-                    refreshPaymentList();
-                    clearForm();
-                } else {
-                    JOptionPane.showMessageDialog(this, "Payment processing failed",
-                            "Error", JOptionPane.ERROR_MESSAGE);
-                }
-            } catch (NumberFormatException ex) {
-                JOptionPane.showMessageDialog(this, "Invalid input format",
-                        "Error", JOptionPane.ERROR_MESSAGE);
-            }
-        });
-        buttonPanel.add(processButton);
-
-        JButton refundButton = new JButton("Process Refund");
-        refundButton.addActionListener(e -> processSelectedRefund());
-        buttonPanel.add(refundButton);
-
+        // Payment Method
         gbc.gridx = 0; gbc.gridy = 2;
-        gbc.gridwidth = 2;
-        formPanel.add(buttonPanel, gbc);
+        panel.add(new JLabel("Payment Method:"), gbc);
+        gbc.gridx = 1;
+        String[] methods = {"CREDIT_CARD", "DEBIT_CARD", "CASH", "BANK_TRANSFER"};
+        paymentMethodComboBox = new JComboBox<>(methods);
+        panel.add(paymentMethodComboBox, gbc);
 
-        mainPanel.add(formPanel, BorderLayout.NORTH);
+        return panel;
     }
 
-    private void setupPaymentTable() {
-        String[] columns = {"ID", "Booking ID", "Amount", "Date", "Status", "Refund Date"};
-        tableModel = new DefaultTableModel(columns, 0) {
+    private JPanel createButtonPanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 5));
+
+        addButton(panel, "Process Payment", e -> processPayment());
+        addButton(panel, "Process Refund", e -> processRefund());
+        addButton(panel, "Refresh", e -> refreshPaymentTable());
+        addButton(panel, "Clear Form", e -> clearForm());
+
+        return panel;
+    }
+
+    private void addButton(JPanel panel, String text, ActionListener listener) {
+        JButton button = new JButton(text);
+        button.addActionListener(listener);
+        panel.add(button);
+    }
+
+    private JPanel createTablePanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(BorderFactory.createTitledBorder("Payment History"));
+
+        String[] columnNames = {
+                "Payment ID", "Reservation ID", "Customer ID", "Amount",
+                "Payment Date", "Method", "Status", "Transaction Ref"
+        };
+        tableModel = new DefaultTableModel(columnNames, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
             }
         };
 
-        paymentTable = new JTable(tableModel);
-        JScrollPane scrollPane = new JScrollPane(paymentTable);
-        mainPanel.add(scrollPane, BorderLayout.CENTER);
-    }
+        paymentsTable = new JTable(tableModel);
+        paymentsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        paymentsTable.getSelectionModel().addListSelectionListener(e -> fillFormFromSelection());
 
-    private void setupStatusBar() {
-        JPanel statusBar = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        statusBar.setBorder(BorderFactory.createLoweredBevelBorder());
-        statusBar.add(new JLabel("Ready"));
-        mainPanel.add(statusBar, BorderLayout.SOUTH);
-    }
-
-    private void processSelectedRefund() {
-        int selectedRow = paymentTable.getSelectedRow();
-        if (selectedRow >= 0) {
-            int paymentId = (int) paymentTable.getValueAt(selectedRow, 0);
-            String status = (String) paymentTable.getValueAt(selectedRow, 4);
-
-            if (!"COMPLETED".equals(status)) {
-                JOptionPane.showMessageDialog(this,
-                        "Only completed payments can be refunded",
-                        "Invalid Operation", JOptionPane.WARNING_MESSAGE);
-                return;
+        // Add custom renderers for currency and dates
+        paymentsTable.getColumnModel().getColumn(3).setCellRenderer(new DefaultTableCellRenderer() {
+            { setHorizontalAlignment(SwingConstants.RIGHT); }
+            @Override
+            public void setValue(Object value) {
+                setText(value instanceof Double ? String.format("$%.2f", value) : "");
             }
+        });
 
-            int confirm = JOptionPane.showConfirmDialog(this,
-                    "Are you sure you want to process this refund?",
-                    "Confirm Refund",
-                    JOptionPane.YES_NO_OPTION);
+        JScrollPane scrollPane = new JScrollPane(paymentsTable);
+        panel.add(scrollPane, BorderLayout.CENTER);
+        return panel;
+    }
 
-            if (confirm == JOptionPane.YES_OPTION) {
-                boolean success = agent.processRefund(paymentId);
-                if (success) {
-                    JOptionPane.showMessageDialog(this, "Refund processed successfully");
-                    refreshPaymentList();
+    private JPanel createStatusPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(BorderFactory.createTitledBorder("Status Log"));
+
+        statusArea = new JTextArea(5, 40);
+        statusArea.setEditable(false);
+        JScrollPane scrollPane = new JScrollPane(statusArea);
+        panel.add(scrollPane, BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    private void setupWindowBehavior() {
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        addWindowListener(new WindowAdapter() {
+            public void windowClosing(WindowEvent e) {
+                myAgent.doDelete();
+            }
+        });
+        setResizable(true);
+        setMinimumSize(new Dimension(900, 600));
+    }
+
+    private void processPayment() {
+        try {
+            Map<String, String> paymentData = new HashMap<>();
+            paymentData.put("reservationId", reservationIdField.getText().trim());
+            paymentData.put("amount", amountField.getText().trim());
+            paymentData.put("paymentMethod", paymentMethodComboBox.getSelectedItem().toString());
+
+            if (validatePaymentData(paymentData)) {
+                if (myAgent.processPayment(paymentData)) {
+                    updateStatus("Payment processed successfully");
+                    clearForm();
+                    refreshPaymentTable();
                 } else {
-                    JOptionPane.showMessageDialog(this, "Refund processing failed",
-                            "Error", JOptionPane.ERROR_MESSAGE);
+                    updateStatus("Failed to process payment");
                 }
             }
-        } else {
-            JOptionPane.showMessageDialog(this, "Please select a payment to refund");
+        } catch (Exception e) {
+            updateStatus("Error processing payment: " + e.getMessage());
+        }
+    }
+
+    private void processRefund() {
+        int selectedRow = paymentsTable.getSelectedRow();
+        if (selectedRow == -1) {
+            updateStatus("Please select a payment to refund");
+            return;
+        }
+
+        int paymentId = (Integer) tableModel.getValueAt(selectedRow, 0);
+        String currentStatus = (String) tableModel.getValueAt(selectedRow, 6);
+
+        if ("REFUNDED".equals(currentStatus)) {
+            updateStatus("This payment has already been refunded");
+            return;
+        }
+
+        int confirm = JOptionPane.showConfirmDialog(
+                this,
+                "Are you sure you want to process this refund?",
+                "Confirm Refund",
+                JOptionPane.YES_NO_OPTION
+        );
+
+        if (confirm == JOptionPane.YES_OPTION) {
+            if (myAgent.processRefund(paymentId)) {
+                updateStatus("Refund processed successfully");
+                refreshPaymentTable();
+            } else {
+                updateStatus("Failed to process refund");
+            }
+        }
+    }
+
+    private boolean validatePaymentData(Map<String, String> data) {
+        if (data.get("reservationId").isEmpty() || data.get("amount").isEmpty()) {
+            updateStatus("Please fill in all required fields");
+            return false;
+        }
+
+        try {
+            int reservationId = Integer.parseInt(data.get("reservationId"));
+            double amount = Double.parseDouble(data.get("amount"));
+
+            if (amount <= 0) {
+                updateStatus("Amount must be greater than zero");
+                return false;
+            }
+        } catch (NumberFormatException e) {
+            updateStatus("Please enter valid numbers for Reservation ID and Amount");
+            return false;
+        }
+
+        return true;
+    }
+
+    private void fillFormFromSelection() {
+        int selectedRow = paymentsTable.getSelectedRow();
+        if (selectedRow >= 0) {
+            reservationIdField.setText(tableModel.getValueAt(selectedRow, 1).toString());
+            amountField.setText(tableModel.getValueAt(selectedRow, 3).toString().replace("$", ""));
+            String method = (String) tableModel.getValueAt(selectedRow, 5);
+            paymentMethodComboBox.setSelectedItem(method);
         }
     }
 
     private void clearForm() {
-        // Clear all form fields
+        reservationIdField.setText("");
+        amountField.setText("");
+        paymentMethodComboBox.setSelectedIndex(0);
+        paymentsTable.clearSelection();
     }
 
-    private void exportPaymentReport() {
-        // Implementation for exporting payment report
-    }
-
-    public void refreshPaymentList() {
+    public void refreshPaymentTable() {
         tableModel.setRowCount(0);
-        List<Payment> payments = agent.getAllPayments();
+        List<Map<String, Object>> payments = myAgent.getPaymentHistory();
 
-        for (Payment payment : payments) {
+        for (Map<String, Object> payment : payments) {
             Object[] row = {
-                    payment.getId(),
-                    payment.getBookingId(),
-                    currencyFormat.format(payment.getAmount()),
-                    payment.getPaymentDate(),
-                    payment.getStatus(),
-                    payment.getRefundDate()
+                    payment.get("paymentId"),
+                    payment.get("reservationId"),
+                    payment.get("customerId"),
+                    payment.get("amount"),
+                    dateFormat.format(payment.get("paymentDate")),
+                    payment.get("paymentMethod"),
+                    payment.get("paymentStatus"),
+                    payment.get("transactionReference")
             };
             tableModel.addRow(row);
         }
+    }
+
+    public void updateStatus(String message) {
+        SwingUtilities.invokeLater(() -> {
+            String timestamp = dateFormat.format(new Date());
+            statusArea.append(timestamp + ": " + message + "\n");
+            statusArea.setCaretPosition(statusArea.getDocument().getLength());
+        });
+    }
+
+    public void display() {
+        pack();
+        centerOnScreen();
+        setVisible(true);
+    }
+
+    private void centerOnScreen() {
+        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+        setLocation(
+                (screenSize.width - getWidth()) / 2,
+                (screenSize.height - getHeight()) / 2
+        );
     }
 }
