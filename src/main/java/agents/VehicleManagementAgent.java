@@ -26,14 +26,14 @@ public class VehicleManagementAgent extends Agent {
         setupDatabase();
 
         // Create and show GUI
-        gui = new VehicleManagementGUI(this);
-        gui.display();
+//        gui = new VehicleManagementGUI(this);
+//        gui.display();
 
         // Register the agent services
         registerService();
 
         // Add behavior to handle vehicle management requests
-        addBehaviour(new CyclicBehaviour(this) {
+        addBehaviour(new SimpleBehaviour(this) {
             public void action() {
                 MessageTemplate mt = MessageTemplate.MatchPerformative(ACLMessage.REQUEST);
                 ACLMessage msg = receive(mt);
@@ -65,6 +65,11 @@ public class VehicleManagementAgent extends Agent {
                 } else {
                     block();
                 }
+            }
+
+            @Override
+            public boolean done() {
+                return false;
             }
         });
     }

@@ -4,6 +4,7 @@ import database.DatabaseConnection;
 import gui.ReservationGUI;
 import jade.core.Agent;
 import jade.core.behaviours.CyclicBehaviour;
+import jade.core.behaviours.SimpleBehaviour;
 import jade.lang.acl.ACLMessage;
 import jade.lang.acl.MessageTemplate;
 import jade.domain.DFService;
@@ -36,15 +37,15 @@ public class ReservationAgent extends Agent {
         }
 
         // Initialize GUI
-        SwingUtilities.invokeLater(() -> {
-            gui = new ReservationGUI(this);
-        });
+//        SwingUtilities.invokeLater(() -> {
+//            gui = new ReservationGUI(this);
+//        });
 
         // Register agent services
         registerService();
 
         // Add behavior to handle messages
-        addBehaviour(new CyclicBehaviour(this) {
+        addBehaviour(new SimpleBehaviour(this) {
             public void action() {
                 MessageTemplate mt = MessageTemplate.MatchPerformative(ACLMessage.REQUEST);
                 ACLMessage msg = receive(mt);
@@ -54,6 +55,11 @@ public class ReservationAgent extends Agent {
                 } else {
                     block();
                 }
+            }
+
+            @Override
+            public boolean done() {
+                return false;
             }
         });
     }

@@ -6,6 +6,7 @@ import gui.ReservationGUI;
 import jade.core.AID;
 import jade.core.Agent;
 import jade.core.behaviours.CyclicBehaviour;
+import jade.core.behaviours.SimpleBehaviour;
 import jade.lang.acl.ACLMessage;
 import jade.domain.DFService;
 import jade.domain.FIPAException;
@@ -30,7 +31,7 @@ public class MasterAgent extends Agent {
         registerService();
 
         // Add behavior to handle messages from other agents
-        addBehaviour(new CyclicBehaviour(this) {
+        addBehaviour(new SimpleBehaviour(this) {
             @Override
             public void action() {
                 ACLMessage msg = receive();
@@ -39,6 +40,11 @@ public class MasterAgent extends Agent {
                 } else {
                     block();
                 }
+            }
+
+            @Override
+            public boolean done() {
+                return false;
             }
         });
 

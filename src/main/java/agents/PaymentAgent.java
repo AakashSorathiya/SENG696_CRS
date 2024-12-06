@@ -14,7 +14,6 @@ import jade.domain.FIPAAgentManagement.ServiceDescription;
 
 import java.sql.*;
 import java.util.*;
-import java.time.LocalDateTime;
 
 public class PaymentAgent extends Agent {
     private Connection dbConnection;
@@ -25,19 +24,20 @@ public class PaymentAgent extends Agent {
         setupDatabase();
 
         // Create and show GUI
-        gui = new PaymentGUI(this);
-        gui.display();
+//        gui = new PaymentGUI(this);
+//        gui.display();
 
         // Register the agent services
         registerService();
 
         // Add behavior to handle payment requests
-        addBehaviour(new CyclicBehaviour(this) {
+        addBehaviour(new SimpleBehaviour(this) {
             public void action() {
                 MessageTemplate mt = MessageTemplate.MatchPerformative(ACLMessage.REQUEST);
                 ACLMessage msg = receive(mt);
 
                 if (msg != null) {
+                    showGUI();
                     String content = msg.getContent();
                     ACLMessage reply = msg.createReply();
 
@@ -61,7 +61,19 @@ public class PaymentAgent extends Agent {
                     block();
                 }
             }
+
+            @Override
+            public boolean done() {
+                return false;
+            }
         });
+    }
+
+    private void showGUI() {
+        if (gui == null) {
+            gui = new PaymentGUI(this);
+        }
+        gui.setVisible(true);
     }
 
     private void setupDatabase() {
