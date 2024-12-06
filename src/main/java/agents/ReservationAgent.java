@@ -1,9 +1,9 @@
 package agents;
 
-// ReservationAgent.java
+import database.DatabaseConnection;
 import gui.ReservationGUI;
 import jade.core.Agent;
-import jade.core.behaviours.*;
+import jade.core.behaviours.CyclicBehaviour;
 import jade.lang.acl.ACLMessage;
 import jade.lang.acl.MessageTemplate;
 import jade.domain.DFService;
@@ -11,6 +11,7 @@ import jade.domain.FIPAException;
 import jade.domain.FIPAAgentManagement.DFAgentDescription;
 import jade.domain.FIPAAgentManagement.ServiceDescription;
 
+import javax.swing.SwingUtilities;
 import java.sql.*;
 import java.util.*;
 import java.time.LocalDateTime;
@@ -19,66 +20,42 @@ import java.time.format.DateTimeFormatter;
 public class ReservationAgent extends Agent {
     private Connection dbConnection;
     private ReservationGUI gui;
-    private static final String DB_URL = "jdbc:mysql://localhost:3306/car_rental";
-    private static final String USER = "root";
-    private static final String PASS = "password";
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     protected void setup() {
+        System.out.println("Reservation Agent " + getLocalName() + " starting...");
+
         // Initialize database connection
-        setupDatabase();
+        try {
+            dbConnection = DatabaseConnection.getConnection();
+            System.out.println("Database connection established successfully");
+        } catch (SQLException e) {
+            System.err.println("Failed to connect to database: " + e.getMessage());
+            doDelete();
+            return;
+        }
 
-        // Create and show GUI
-        gui = new ReservationGUI(this);
-        gui.display();
+        // Initialize GUI
+        SwingUtilities.invokeLater(() -> {
+            gui = new ReservationGUI(this);
+        });
 
-        // Register the agent services
+        // Register agent services
         registerService();
 
-        // Add behavior to handle reservation requests
+        // Add behavior to handle messages
         addBehaviour(new CyclicBehaviour(this) {
             public void action() {
                 MessageTemplate mt = MessageTemplate.MatchPerformative(ACLMessage.REQUEST);
                 ACLMessage msg = receive(mt);
 
                 if (msg != null) {
-                    String content = msg.getContent();
-                    ACLMessage reply = msg.createReply();
-
-                    try {
-                        if (content.startsWith("CREATE:")) {
-                            Map<String, String> reservationData = parseReservationData(content);
-                            boolean success = createReservation(reservationData);
-                            handleOperationResult(reply, success, "Reservation creation");
-                        } else if (content.startsWith("CANCEL:")) {
-                            int reservationId = Integer.parseInt(content.substring(7));
-                            boolean success = cancelReservation(reservationId);
-                            handleOperationResult(reply, success, "Reservation cancellation");
-                        } else if (content.startsWith("MODIFY:")) {
-                            Map<String, String> modificationData = parseReservationData(content);
-                            boolean success = modifyReservation(modificationData);
-                            handleOperationResult(reply, success, "Reservation modification");
-                        }
-                    } catch (Exception e) {
-                        reply.setPerformative(ACLMessage.FAILURE);
-                        reply.setContent("Error: " + e.getMessage());
-                    }
-
-                    send(reply);
+                    handleMessage(msg);
                 } else {
                     block();
                 }
             }
         });
-    }
-
-    private void setupDatabase() {
-        try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
-            dbConnection = DriverManager.getConnection(DB_URL, USER, PASS);
-        } catch (Exception e) {
-            e.printStackTrace();
-            doDelete();
-        }
     }
 
     private void registerService() {
@@ -95,35 +72,37 @@ public class ReservationAgent extends Agent {
         }
     }
 
-    protected void takeDown() {
-        // Deregister from the DF
-        try {
-            DFService.deregister(this);
-        } catch (FIPAException fe) {
-            fe.printStackTrace();
-        }
+    private void handleMessage(ACLMessage msg) {
+        String content = msg.getContent();
+        ACLMessage reply = msg.createReply();
 
-        // Close database connection
         try {
-            if (dbConnection != null) {
-                dbConnection.close();
+            if (content.startsWith("CREATE:")) {
+                Map<String, String> reservationData = parseReservationData(content);
+                boolean success = createReservation(reservationData);
+                handleOperationResult(reply, success, "Reservation creation");
+            } else if (content.startsWith("CANCEL:")) {
+                int reservationId = Integer.parseInt(content.substring(7));
+                boolean success = cancelReservation(reservationId);
+                handleOperationResult(reply, success, "Reservation cancellation");
+            } else if (content.startsWith("MODIFY:")) {
+                Map<String, String> modificationData = parseReservationData(content);
+                boolean success = modifyReservation(modificationData);
+                handleOperationResult(reply, success, "Reservation modification");
             }
-        } catch (SQLException se) {
-            se.printStackTrace();
+        } catch (Exception e) {
+            reply.setPerformative(ACLMessage.FAILURE);
+            reply.setContent("Error: " + e.getMessage());
         }
 
-        // Close GUI
-        gui.dispose();
-
-        System.out.println("Reservation Agent " + getAID().getName() + " terminating.");
+        send(reply);
     }
 
-    // Database operations
     public boolean createReservation(Map<String, String> reservationData) {
         String sql = "INSERT INTO reservations (customer_id, vehicle_id, start_date, end_date, total_cost, status) " +
                 "VALUES (?, ?, ?, ?, ?, 'PENDING')";
 
-        try (PreparedStatement pstmt = dbConnection.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = dbConnection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             pstmt.setInt(1, Integer.parseInt(reservationData.get("customerId")));
             pstmt.setInt(2, Integer.parseInt(reservationData.get("vehicleId")));
             pstmt.setString(3, reservationData.get("startDate"));
@@ -131,8 +110,11 @@ public class ReservationAgent extends Agent {
             pstmt.setDouble(5, Double.parseDouble(reservationData.get("totalCost")));
 
             int result = pstmt.executeUpdate();
-            updateVehicleStatus(Integer.parseInt(reservationData.get("vehicleId")), "RESERVED");
-            return result > 0;
+            if (result > 0) {
+                updateVehicleStatus(Integer.parseInt(reservationData.get("vehicleId")), "RESERVED");
+                return true;
+            }
+            return false;
         } catch (SQLException e) {
             e.printStackTrace();
             return false;
@@ -145,11 +127,11 @@ public class ReservationAgent extends Agent {
         try (PreparedStatement pstmt = dbConnection.prepareStatement(sql)) {
             pstmt.setInt(1, reservationId);
 
-            // First get the vehicle ID
+            // Get vehicle ID before updating reservation
             int vehicleId = getVehicleIdFromReservation(reservationId);
             int result = pstmt.executeUpdate();
 
-            if (result > 0) {
+            if (result > 0 && vehicleId != -1) {
                 updateVehicleStatus(vehicleId, "AVAILABLE");
                 return true;
             }
@@ -161,7 +143,8 @@ public class ReservationAgent extends Agent {
     }
 
     public boolean modifyReservation(Map<String, String> reservationData) {
-        String sql = "UPDATE reservations SET start_date = ?, end_date = ?, total_cost = ? WHERE reservation_id = ?";
+        String sql = "UPDATE reservations SET start_date = ?, end_date = ?, total_cost = ? " +
+                "WHERE reservation_id = ? AND status = 'PENDING'";
 
         try (PreparedStatement pstmt = dbConnection.prepareStatement(sql)) {
             pstmt.setString(1, reservationData.get("startDate"));
@@ -177,51 +160,6 @@ public class ReservationAgent extends Agent {
         }
     }
 
-    private int getVehicleIdFromReservation(int reservationId) throws SQLException {
-        String sql = "SELECT vehicle_id FROM reservations WHERE reservation_id = ?";
-        try (PreparedStatement pstmt = dbConnection.prepareStatement(sql)) {
-            pstmt.setInt(1, reservationId);
-            ResultSet rs = pstmt.executeQuery();
-            if (rs.next()) {
-                return rs.getInt("vehicle_id");
-            }
-        }
-        return -1;
-    }
-
-    private void updateVehicleStatus(int vehicleId, String status) {
-        String sql = "UPDATE vehicles SET status = ? WHERE vehicle_id = ?";
-        try (PreparedStatement pstmt = dbConnection.prepareStatement(sql)) {
-            pstmt.setString(1, status);
-            pstmt.setInt(2, vehicleId);
-            pstmt.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    // Helper methods
-    private Map<String, String> parseReservationData(String content) {
-        Map<String, String> data = new HashMap<>();
-        String[] pairs = content.substring(content.indexOf(":") + 1).split(",");
-        for (String pair : pairs) {
-            String[] keyValue = pair.split("=");
-            data.put(keyValue[0], keyValue[1]);
-        }
-        return data;
-    }
-
-    private void handleOperationResult(ACLMessage reply, boolean success, String operation) {
-        if (success) {
-            reply.setPerformative(ACLMessage.INFORM);
-            reply.setContent(operation + " successful");
-        } else {
-            reply.setPerformative(ACLMessage.FAILURE);
-            reply.setContent(operation + " failed");
-        }
-    }
-
-    // Methods that can be called from GUI
     public List<Map<String, Object>> getAvailableVehicles() {
         List<Map<String, Object>> vehicles = new ArrayList<>();
         String sql = "SELECT * FROM vehicles WHERE status = 'AVAILABLE'";
@@ -249,7 +187,7 @@ public class ReservationAgent extends Agent {
         List<Map<String, Object>> reservations = new ArrayList<>();
         String sql = "SELECT r.*, v.make, v.model FROM reservations r " +
                 "JOIN vehicles v ON r.vehicle_id = v.vehicle_id " +
-                "WHERE r.customer_id = ?";
+                "WHERE r.customer_id = ? ORDER BY r.start_date DESC";
 
         try (PreparedStatement pstmt = dbConnection.prepareStatement(sql)) {
             pstmt.setInt(1, customerId);
@@ -270,5 +208,72 @@ public class ReservationAgent extends Agent {
         }
 
         return reservations;
+    }
+
+    private int getVehicleIdFromReservation(int reservationId) throws SQLException {
+        String sql = "SELECT vehicle_id FROM reservations WHERE reservation_id = ?";
+        try (PreparedStatement pstmt = dbConnection.prepareStatement(sql)) {
+            pstmt.setInt(1, reservationId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return rs.getInt("vehicle_id");
+            }
+        }
+        return -1;
+    }
+
+    private void updateVehicleStatus(int vehicleId, String status) {
+        String sql = "UPDATE vehicles SET status = ? WHERE vehicle_id = ?";
+        try (PreparedStatement pstmt = dbConnection.prepareStatement(sql)) {
+            pstmt.setString(1, status);
+            pstmt.setInt(2, vehicleId);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private Map<String, String> parseReservationData(String content) {
+        Map<String, String> data = new HashMap<>();
+        String[] pairs = content.substring(content.indexOf(":") + 1).split(",");
+        for (String pair : pairs) {
+            String[] keyValue = pair.split("=");
+            if (keyValue.length == 2) {
+                data.put(keyValue[0], keyValue[1]);
+            }
+        }
+        return data;
+    }
+
+    private void handleOperationResult(ACLMessage reply, boolean success, String operation) {
+        if (success) {
+            reply.setPerformative(ACLMessage.INFORM);
+            reply.setContent(operation + " successful");
+        } else {
+            reply.setPerformative(ACLMessage.FAILURE);
+            reply.setContent(operation + " failed");
+        }
+    }
+
+    protected void takeDown() {
+        try {
+            DFService.deregister(this);
+        } catch (FIPAException fe) {
+            fe.printStackTrace();
+        }
+
+        try {
+            if (dbConnection != null && !dbConnection.isClosed()) {
+                dbConnection.close();
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        if (gui != null) {
+            gui.dispose();
+        }
+
+        System.out.println("Reservation Agent " + getAID().getName() + " terminating.");
     }
 }

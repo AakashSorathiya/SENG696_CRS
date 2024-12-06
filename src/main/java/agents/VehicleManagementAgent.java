@@ -1,6 +1,7 @@
 package agents;
 
 // VehicleManagementAgent.java
+import database.DatabaseConnection;
 import gui.VehicleManagementGUI;
 import jade.core.Agent;
 import jade.core.behaviours.*;
@@ -18,9 +19,7 @@ import java.time.LocalDate;
 public class VehicleManagementAgent extends Agent {
     private Connection dbConnection;
     private VehicleManagementGUI gui;
-    private static final String DB_URL = "jdbc:mysql://localhost:3306/car_rental";
-    private static final String USER = "root";
-    private static final String PASS = "password";
+
 
     protected void setup() {
         // Initialize database connection
@@ -72,8 +71,8 @@ public class VehicleManagementAgent extends Agent {
 
     private void setupDatabase() {
         try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
-            dbConnection = DriverManager.getConnection(DB_URL, USER, PASS);
+//            Class.forName("com.mysql.jdbc.Driver");
+            dbConnection = DatabaseConnection.getConnection();
         } catch (Exception e) {
             e.printStackTrace();
             doDelete();
@@ -111,8 +110,10 @@ public class VehicleManagementAgent extends Agent {
             se.printStackTrace();
         }
 
-        // Close GUI
-        gui.dispose();
+        // Close GUI with null check
+        if (gui != null) {
+            gui.dispose();
+        }
 
         System.out.println("Vehicle Management Agent " + getAID().getName() + " terminating.");
     }

@@ -1,101 +1,173 @@
 package gui;
 
-// MasterGUI.java
 import agents.MasterAgent;
-
-// MasterGUI.java
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import javax.swing.border.EmptyBorder;
 
 public class MasterGUI extends JFrame {
     private MasterAgent myAgent;
     private JTextArea logArea;
+    private JPanel buttonPanel;
 
     public MasterGUI(MasterAgent agent) {
-        super("Car Rental System - Master Control");
+        super("Car Rental Management System");
         this.myAgent = agent;
+        setupGUI();
+    }
 
-        // Main panel
-        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
-        mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-
-        // Title Panel
-        JPanel titlePanel = new JPanel();
-        JLabel titleLabel = new JLabel("Car Rental System Control Panel");
-        titleLabel.setFont(new Font("Arial", Font.BOLD, 20));
-        titlePanel.add(titleLabel);
-
-        // Buttons Panel
-        JPanel buttonPanel = new JPanel(new GridLayout(2, 2, 10, 10));
-        buttonPanel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
-
-        // Create buttons with icons (you can add icons later)
-        addButton(buttonPanel, "Registration", "Manage customer registrations", 1);
-        addButton(buttonPanel, "Reservations", "Manage car reservations", 2);
-        addButton(buttonPanel, "Vehicle Management", "Manage vehicle inventory", 3);
-        addButton(buttonPanel, "Payments", "Process payments and refunds", 4);
-
-        // Log Panel
-        JPanel logPanel = new JPanel(new BorderLayout());
-        logPanel.setBorder(BorderFactory.createTitledBorder("System Log"));
-        logArea = new JTextArea(8, 40);
-        logArea.setEditable(false);
-        JScrollPane scrollPane = new JScrollPane(logArea);
-        logPanel.add(scrollPane);
-
-        // Add all panels to main panel
-        mainPanel.add(titlePanel, BorderLayout.NORTH);
-        mainPanel.add(buttonPanel, BorderLayout.CENTER);
-        mainPanel.add(logPanel, BorderLayout.SOUTH);
-
-        // Add main panel to frame
-        setContentPane(mainPanel);
-
-        // Window closing behavior
+    private void setupGUI() {
+        // Set window properties
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
             public void windowClosing(WindowEvent e) {
                 myAgent.doDelete();
             }
         });
 
-        // Basic frame settings
-        setResizable(false);
-        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        // Main container with padding
+        JPanel mainPanel = new JPanel(new BorderLayout(20, 20));
+        mainPanel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        setContentPane(mainPanel);
+
+        // Header Panel
+        mainPanel.add(createHeaderPanel(), BorderLayout.NORTH);
+
+        // Center Panel with Buttons
+        mainPanel.add(createCenterPanel(), BorderLayout.CENTER);
+
+        // Log Panel at bottom
+        mainPanel.add(createLogPanel(), BorderLayout.SOUTH);
+
+        // Set window size and position
+        setMinimumSize(new Dimension(800, 600));
+        setLocationRelativeTo(null);
+        setVisible(true);
     }
 
-    private void addButton(JPanel panel, String text, String tooltip, int choice) {
-        JButton button = new JButton(text);
-        button.setToolTipText(tooltip);
-        button.setPreferredSize(new Dimension(150, 60));
-        button.setFont(new Font("Arial", Font.PLAIN, 14));
+    private JPanel createHeaderPanel() {
+        JPanel headerPanel = new JPanel(new BorderLayout(10, 10));
 
+        // Title
+        JLabel titleLabel = new JLabel("Car Rental Management System");
+        titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
+        titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        titleLabel.setBorder(new EmptyBorder(0, 0, 20, 0));
+
+        headerPanel.add(titleLabel, BorderLayout.CENTER);
+
+        // Subtitle
+        JLabel subtitleLabel = new JLabel("Select an operation to continue");
+        subtitleLabel.setFont(new Font("Arial", Font.PLAIN, 16));
+        subtitleLabel.setHorizontalAlignment(SwingConstants.CENTER);
+
+        headerPanel.add(subtitleLabel, BorderLayout.SOUTH);
+
+        return headerPanel;
+    }
+
+    private JPanel createCenterPanel() {
+        JPanel centerPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.fill = GridBagConstraints.BOTH;
+        gbc.weightx = 1.0;
+        gbc.weighty = 1.0;
+
+        // Create buttons with icons and descriptions
+        String[][] buttonInfo = {
+                {"Registration", "Manage customer registrations and profiles", "1"},
+                {"Reservations", "Book and manage car reservations", "2"},
+                {"Vehicle Management", "Manage vehicle inventory and maintenance", "3"},
+                {"Payments", "Process payments and handle billing", "4"}
+        };
+
+        for (int i = 0; i < buttonInfo.length; i++) {
+            gbc.gridx = i % 2;
+            gbc.gridy = i / 2;
+            centerPanel.add(createModuleButton(buttonInfo[i][0], buttonInfo[i][1], Integer.parseInt(buttonInfo[i][2])), gbc);
+        }
+
+        return centerPanel;
+    }
+
+    private JPanel createModuleButton(String title, String description, int choice) {
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.setLayout(new BorderLayout(5, 5));
+        buttonPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(200, 200, 200), 1),
+                BorderFactory.createEmptyBorder(15, 15, 15, 15)
+        ));
+        buttonPanel.setBackground(Color.WHITE);
+
+        // Create main button with hover effect
+        JButton button = new JButton(title);
+        button.setFont(new Font("Arial", Font.BOLD, 16));
+        button.setFocusPainted(false);
+        button.setBackground(new Color(240, 240, 240));
+        button.setPreferredSize(new Dimension(200, 100));
+
+        // Add hover effect
+        button.addMouseListener(new MouseAdapter() {
+            public void mouseEntered(MouseEvent e) {
+                button.setBackground(new Color(220, 220, 220));
+            }
+            public void mouseExited(MouseEvent e) {
+                button.setBackground(new Color(240, 240, 240));
+            }
+        });
+
+        // Add action listener
         button.addActionListener(e -> {
-            updateLog("Selected: " + text);
+            updateLog("Opening " + title + " module...");
             myAgent.processRequest(choice);
         });
 
-        panel.add(button);
+        // Add description label
+        JLabel descLabel = new JLabel("<html><div style='text-align: center;'>" + description + "</div></html>");
+        descLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+        descLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        descLabel.setBorder(new EmptyBorder(5, 0, 0, 0));
+
+        buttonPanel.add(button, BorderLayout.CENTER);
+        buttonPanel.add(descLabel, BorderLayout.SOUTH);
+
+        return buttonPanel;
+    }
+
+    private JPanel createLogPanel() {
+        JPanel logPanel = new JPanel(new BorderLayout(5, 5));
+        logPanel.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createEtchedBorder(),
+                "System Log",
+                javax.swing.border.TitledBorder.DEFAULT_JUSTIFICATION,
+                javax.swing.border.TitledBorder.DEFAULT_POSITION,
+                new Font("Arial", Font.BOLD, 12)
+        ));
+
+        logArea = new JTextArea(6, 40);
+        logArea.setEditable(false);
+        logArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
+        logArea.setMargin(new Insets(5, 5, 5, 5));
+
+        JScrollPane scrollPane = new JScrollPane(logArea);
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+
+        JButton clearButton = new JButton("Clear Log");
+        clearButton.addActionListener(e -> logArea.setText(""));
+
+        logPanel.add(scrollPane, BorderLayout.CENTER);
+        logPanel.add(clearButton, BorderLayout.EAST);
+
+        return logPanel;
     }
 
     public void updateLog(String message) {
         SwingUtilities.invokeLater(() -> {
-            logArea.append(message + "\n");
+            String timestamp = String.format("[%tT] ", new java.util.Date());
+            logArea.append(timestamp + message + "\n");
             logArea.setCaretPosition(logArea.getDocument().getLength());
         });
-    }
-
-    public void display() {
-        pack();
-        centerOnScreen();
-        setVisible(true);
-    }
-
-    private void centerOnScreen() {
-        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
-        setLocation(
-                (screenSize.width - getWidth()) / 2,
-                (screenSize.height - getHeight()) / 2
-        );
     }
 }

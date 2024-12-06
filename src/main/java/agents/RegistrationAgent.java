@@ -1,9 +1,9 @@
 package agents;
 
-// RegistrationAgent.java
+import database.DatabaseConnection;
 import gui.RegistrationGUI;
 import jade.core.Agent;
-import jade.core.behaviours.*;
+import jade.core.behaviours.CyclicBehaviour;
 import jade.lang.acl.ACLMessage;
 import jade.lang.acl.MessageTemplate;
 import jade.domain.DFService;
@@ -11,26 +11,36 @@ import jade.domain.FIPAException;
 import jade.domain.FIPAAgentManagement.DFAgentDescription;
 import jade.domain.FIPAAgentManagement.ServiceDescription;
 
+import javax.swing.SwingUtilities;
 import java.sql.*;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 public class RegistrationAgent extends Agent {
     private Connection dbConnection;
     private RegistrationGUI gui;
-    private static final String DB_URL = "jdbc:mysql://localhost:3306/car_rental";
-    private static final String USER = "root";
-    private static final String PASS = "password";
 
     protected void setup() {
+        System.out.println("Registration Agent " + getLocalName() + " starting...");
+
         // Initialize database connection
-        setupDatabase();
+        try {
+            dbConnection = DatabaseConnection.getConnection();
+            System.out.println("Database connection established successfully");
+        } catch (SQLException e) {
+            System.err.println("Failed to connect to database: " + e.getMessage());
+            doDelete();
+            return;
+        }
 
-        // Create and show GUI
-        gui = new RegistrationGUI(this);
-        gui.display();
+        // Initialize GUI on EDT
+        SwingUtilities.invokeLater(() -> {
+            gui = new RegistrationGUI(this);
+        });
 
-        // Register the agent services
+        // Register agent services
         registerService();
 
         // Add behavior to handle registration requests
@@ -40,59 +50,12 @@ public class RegistrationAgent extends Agent {
                 ACLMessage msg = receive(mt);
 
                 if (msg != null) {
-                    String content = msg.getContent();
-                    ACLMessage reply = msg.createReply();
-
-                    if (content.startsWith("REGISTER:")) {
-                        try {
-                            Map<String, String> customerData = parseCustomerData(content);
-                            boolean success = registerCustomer(customerData);
-
-                            if (success) {
-                                reply.setPerformative(ACLMessage.INFORM);
-                                reply.setContent("Registration successful");
-                                gui.updateStatus("Registered new customer: " + customerData.get("email"));
-                            } else {
-                                reply.setPerformative(ACLMessage.FAILURE);
-                                reply.setContent("Registration failed");
-                            }
-                        } catch (Exception e) {
-                            reply.setPerformative(ACLMessage.FAILURE);
-                            reply.setContent("Error: " + e.getMessage());
-                        }
-                    } else if (content.startsWith("DEREGISTER:")) {
-                        String email = content.substring(11);
-                        try {
-                            boolean success = deregisterCustomer(email);
-                            if (success) {
-                                reply.setPerformative(ACLMessage.INFORM);
-                                reply.setContent("Deregistration successful");
-                                gui.updateStatus("Deregistered customer: " + email);
-                            } else {
-                                reply.setPerformative(ACLMessage.FAILURE);
-                                reply.setContent("Deregistration failed");
-                            }
-                        } catch (Exception e) {
-                            reply.setPerformative(ACLMessage.FAILURE);
-                            reply.setContent("Error: " + e.getMessage());
-                        }
-                    }
-                    send(reply);
+                    handleMessage(msg);
                 } else {
                     block();
                 }
             }
         });
-    }
-
-    private void setupDatabase() {
-        try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
-            dbConnection = DriverManager.getConnection(DB_URL, USER, PASS);
-        } catch (Exception e) {
-            e.printStackTrace();
-            doDelete();
-        }
     }
 
     private void registerService() {
@@ -109,32 +72,39 @@ public class RegistrationAgent extends Agent {
         }
     }
 
-    protected void takeDown() {
-        // Deregister from the DF
-        try {
-            DFService.deregister(this);
-        } catch (FIPAException fe) {
-            fe.printStackTrace();
-        }
+    private void handleMessage(ACLMessage msg) {
+        String content = msg.getContent();
+        ACLMessage reply = msg.createReply();
 
-        // Close database connection
         try {
-            if (dbConnection != null) {
-                dbConnection.close();
+            if (content.startsWith("REGISTER:")) {
+                Map<String, String> customerData = parseCustomerData(content);
+                boolean success = registerCustomer(customerData);
+                handleOperationResult(reply, success, "Customer registration");
+            } else if (content.startsWith("DEREGISTER:")) {
+                String email = content.substring(11);
+                boolean success = deregisterCustomer(email);
+                handleOperationResult(reply, success, "Customer deregistration");
+            } else if (content.startsWith("UPDATE:")) {
+                Map<String, String> customerData = parseCustomerData(content);
+                boolean success = updateCustomer(customerData);
+                handleOperationResult(reply, success, "Customer update");
+            } else if (content.equals("GET_ALL_CUSTOMERS")) {
+                List<Map<String, Object>> customers = getAllCustomers();
+                reply.setPerformative(ACLMessage.INFORM);
+                reply.setContent("Customers retrieved: " + customers.size());
             }
-        } catch (SQLException se) {
-            se.printStackTrace();
+        } catch (Exception e) {
+            reply.setPerformative(ACLMessage.FAILURE);
+            reply.setContent("Error: " + e.getMessage());
         }
 
-        // Close GUI
-        gui.dispose();
-
-        System.out.println("Registration Agent " + getAID().getName() + " terminating.");
+        send(reply);
     }
 
-    // Database operations
     public boolean registerCustomer(Map<String, String> customerData) {
-        String sql = "INSERT INTO customers (first_name, last_name, email, phone, drivers_license, address) VALUES (?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO customers (first_name, last_name, email, phone, drivers_license, address, status) " +
+                "VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')";
 
         try (PreparedStatement pstmt = dbConnection.prepareStatement(sql)) {
             pstmt.setString(1, customerData.get("firstName"));
@@ -183,31 +153,75 @@ public class RegistrationAgent extends Agent {
         }
     }
 
+    public List<Map<String, Object>> getAllCustomers() {
+        List<Map<String, Object>> customers = new ArrayList<>();
+        String sql = "SELECT * FROM customers WHERE status = 'ACTIVE'";
+
+        try (Statement stmt = dbConnection.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            while (rs.next()) {
+                Map<String, Object> customer = new HashMap<>();
+                customer.put("id", rs.getInt("customer_id"));
+                customer.put("firstName", rs.getString("first_name"));
+                customer.put("lastName", rs.getString("last_name"));
+                customer.put("email", rs.getString("email"));
+                customer.put("phone", rs.getString("phone"));
+                customer.put("driversLicense", rs.getString("drivers_license"));
+                customer.put("address", rs.getString("address"));
+                customer.put("status", rs.getString("status"));
+                customers.add(customer);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return customers;
+    }
+
     private Map<String, String> parseCustomerData(String content) {
-        // Format: "REGISTER:firstName=John,lastName=Doe,email=john@email.com,..."
         Map<String, String> data = new HashMap<>();
-        String[] pairs = content.substring(9).split(",");
+        String[] pairs = content.substring(content.indexOf(":") + 1).split(",");
         for (String pair : pairs) {
             String[] keyValue = pair.split("=");
-            data.put(keyValue[0], keyValue[1]);
+            if (keyValue.length == 2) {
+                data.put(keyValue[0], keyValue[1]);
+            }
         }
         return data;
     }
 
-    // Methods that can be called from GUI
-    public void registerCustomerFromGUI(Map<String, String> customerData) {
-        if (registerCustomer(customerData)) {
-            gui.updateStatus("Successfully registered: " + customerData.get("email"));
+    private void handleOperationResult(ACLMessage reply, boolean success, String operation) {
+        if (success) {
+            reply.setPerformative(ACLMessage.INFORM);
+            reply.setContent(operation + " successful");
         } else {
-            gui.updateStatus("Failed to register: " + customerData.get("email"));
+            reply.setPerformative(ACLMessage.FAILURE);
+            reply.setContent(operation + " failed");
         }
     }
 
-    public void deregisterCustomerFromGUI(String email) {
-        if (deregisterCustomer(email)) {
-            gui.updateStatus("Successfully deregistered: " + email);
-        } else {
-            gui.updateStatus("Failed to deregister: " + email);
+    protected void takeDown() {
+        // Deregister from DF
+        try {
+            DFService.deregister(this);
+        } catch (FIPAException fe) {
+            fe.printStackTrace();
         }
+
+        // Close database connection
+        try {
+            if (dbConnection != null && !dbConnection.isClosed()) {
+                dbConnection.close();
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        // Close GUI
+        if (gui != null) {
+            gui.dispose();
+        }
+
+        System.out.println("Registration Agent " + getAID().getName() + " terminating.");
     }
 }

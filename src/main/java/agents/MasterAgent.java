@@ -1,111 +1,124 @@
 package agents;
 
-// MasterAgent.java
 import gui.MasterGUI;
+import gui.RegistrationGUI;
+import gui.ReservationGUI;
 import jade.core.AID;
 import jade.core.Agent;
-import jade.core.behaviours.SimpleBehaviour;
+import jade.core.behaviours.CyclicBehaviour;
 import jade.lang.acl.ACLMessage;
 import jade.domain.DFService;
 import jade.domain.FIPAException;
 import jade.domain.FIPAAgentManagement.DFAgentDescription;
 import jade.domain.FIPAAgentManagement.ServiceDescription;
+import javax.swing.SwingUtilities;
+import java.sql.*;
 
 public class MasterAgent extends Agent {
     private MasterGUI gui;
-    private static int flag = -1;
     private static int currentState = 0;
-    public static int masterChoice = 0;
 
     protected void setup() {
-        addBehaviour(new SimpleBehaviour(this) {
+        System.out.println("Master Agent " + getLocalName() + " starting...");
+
+        // Initialize GUI on EDT
+        SwingUtilities.invokeLater(() -> {
+            gui = new MasterGUI(this);
+        });
+
+        // Register master agent services
+        registerService();
+
+        // Add behavior to handle messages from other agents
+        addBehaviour(new CyclicBehaviour(this) {
+            @Override
             public void action() {
-                switch (currentState) {
-                    case 0:
-                        // Wait if GUI is already showing
-                        while(flag == 1) {
-                            try {
-                                Thread.sleep(1000);
-                            } catch (InterruptedException e) {
-                                e.printStackTrace();
-                            }
-                        }
-
-                        // Create and show GUI
-                        gui = new MasterGUI(MasterAgent.this);
-                        gui.display();
-                        flag = 1;
-                        masterChoice = 0;
-
-                        System.out.println("Master Agent: " + getLocalName());
-                        System.out.println("1: Registration\n2: Reservations\n3: Vehicle Management\n4: Payments");
-
-                        while(masterChoice == 0) {
-                            try {
-                                Thread.sleep(1000);
-                            } catch (InterruptedException e) {
-                                e.printStackTrace();
-                            }
-                        }
-
-                        currentState = masterChoice;
-                        break;
-
-                    case 1: // Registration
-                        ACLMessage regMsg = new ACLMessage(ACLMessage.REQUEST);
-                        regMsg.setContent("REGISTRATION_REQUEST");
-                        regMsg.addReceiver(new AID("reg", AID.ISLOCALNAME));
-                        send(regMsg);
-                        currentState = 99;
-                        break;
-
-                    case 2: // Reservations
-                        ACLMessage resMsg = new ACLMessage(ACLMessage.REQUEST);
-                        resMsg.setContent("RESERVATION_REQUEST");
-                        resMsg.addReceiver(new AID("res", AID.ISLOCALNAME));
-                        send(resMsg);
-                        currentState = 99;
-                        break;
-
-                    case 3: // Vehicle Management
-                        ACLMessage vehMsg = new ACLMessage(ACLMessage.REQUEST);
-                        vehMsg.setContent("VEHICLE_REQUEST");
-                        vehMsg.addReceiver(new AID("veh", AID.ISLOCALNAME));
-                        send(vehMsg);
-                        currentState = 99;
-                        break;
-
-                    case 4: // Payments
-                        ACLMessage payMsg = new ACLMessage(ACLMessage.REQUEST);
-                        payMsg.setContent("PAYMENT_REQUEST");
-                        payMsg.addReceiver(new AID("pay", AID.ISLOCALNAME));
-                        send(payMsg);
-                        currentState = 99;
-                        break;
-
-                    case 99:
-                        // Reset state and flag for next operation
-                        currentState = 0;
-                        flag = -1;
-                        break;
+                ACLMessage msg = receive();
+                if (msg != null) {
+                    handleMessage(msg);
+                } else {
+                    block();
                 }
             }
-
-            public boolean done() {
-                return false;
-            }
         });
+
+        System.out.println("Master Agent setup completed");
+    }
+
+    private void registerService() {
+        DFAgentDescription dfd = new DFAgentDescription();
+        dfd.setName(getAID());
+        ServiceDescription sd = new ServiceDescription();
+        sd.setType("master-agent");
+        sd.setName("car-rental-master");
+        dfd.addServices(sd);
+        try {
+            DFService.register(this, dfd);
+        } catch (FIPAException fe) {
+            fe.printStackTrace();
+        }
+    }
+
+    private void handleMessage(ACLMessage msg) {
+        String content = msg.getContent();
+        switch (msg.getPerformative()) {
+            case ACLMessage.INFORM:
+                gui.updateLog("Success: " + content);
+                break;
+            case ACLMessage.FAILURE:
+                gui.updateLog("Error: " + content);
+                break;
+            default:
+                gui.updateLog("Received message: " + content);
+        }
+    }
+
+    // Method called from GUI
+    public void processRequest(int choice) {
+        ACLMessage msg = new ACLMessage(ACLMessage.REQUEST);
+        String content = "";
+        AID receiver = null;
+
+        switch (choice) {
+            case 1: // Registration
+                content = "REGISTRATION_REQUEST";
+                receiver = new AID("reg", AID.ISLOCALNAME);
+                break;
+            case 2: // Reservations
+                content = "RESERVATION_REQUEST";
+                receiver = new AID("res", AID.ISLOCALNAME);
+                break;
+            case 3: // Vehicle Management
+                content = "VEHICLE_REQUEST";
+                receiver = new AID("veh", AID.ISLOCALNAME);
+                break;
+            case 4: // Payments
+                content = "PAYMENT_REQUEST";
+                receiver = new AID("pay", AID.ISLOCALNAME);
+                break;
+        }
+
+        if (receiver != null) {
+            msg.setContent(content);
+            msg.addReceiver(receiver);
+            send(msg);
+            gui.updateLog("Sent request to " + receiver.getLocalName());
+        }
     }
 
     protected void takeDown() {
+        // Deregister from the DF
+        try {
+            DFService.deregister(this);
+        } catch (FIPAException fe) {
+            fe.printStackTrace();
+        }
+
+        // Close GUI
         if (gui != null) {
             gui.dispose();
         }
-        System.out.println("Master Agent " + getAID().getName() + " terminating.");
-    }
 
-    // Method to be called from GUI
-    public void processRequest(int choice) {
-        masterChoice = choice;
+        System.out.println("Master Agent " + getAID().getName() + " terminating.");
     }
 }

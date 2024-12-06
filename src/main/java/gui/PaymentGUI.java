@@ -41,6 +41,9 @@ public class PaymentGUI extends JFrame {
         setContentPane(mainPanel);
         setupWindowBehavior();
         refreshPaymentTable();
+        pack();
+        centerOnScreen();
+        setVisible(true);
     }
 
     private JPanel createPaymentPanel() {

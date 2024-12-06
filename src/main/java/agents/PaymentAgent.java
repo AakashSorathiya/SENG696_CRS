@@ -1,6 +1,7 @@
 package agents;
 
 // PaymentAgent.java
+import database.DatabaseConnection;
 import gui.PaymentGUI;
 import jade.core.Agent;
 import jade.core.behaviours.*;
@@ -18,9 +19,6 @@ import java.time.LocalDateTime;
 public class PaymentAgent extends Agent {
     private Connection dbConnection;
     private PaymentGUI gui;
-    private static final String DB_URL = "jdbc:mysql://localhost:3306/car_rental";
-    private static final String USER = "root";
-    private static final String PASS = "password";
 
     protected void setup() {
         // Initialize database connection
@@ -68,8 +66,7 @@ public class PaymentAgent extends Agent {
 
     private void setupDatabase() {
         try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
-            dbConnection = DriverManager.getConnection(DB_URL, USER, PASS);
+            dbConnection = DatabaseConnection.getConnection();
         } catch (Exception e) {
             e.printStackTrace();
             doDelete();
@@ -107,8 +104,10 @@ public class PaymentAgent extends Agent {
             se.printStackTrace();
         }
 
-        // Close GUI
-        gui.dispose();
+        // Close GUI with null check
+        if (gui != null) {
+            gui.dispose();
+        }
 
         System.out.println("Payment Agent " + getAID().getName() + " terminating.");
     }
