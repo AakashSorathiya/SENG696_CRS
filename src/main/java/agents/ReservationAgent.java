@@ -1,6 +1,7 @@
 package agents;
 
 import database.DatabaseConnection;
+import gui.RegistrationGUI;
 import gui.ReservationGUI;
 import jade.core.Agent;
 import jade.core.behaviours.CyclicBehaviour;
@@ -36,10 +37,6 @@ public class ReservationAgent extends Agent {
             return;
         }
 
-        // Initialize GUI
-//        SwingUtilities.invokeLater(() -> {
-//            gui = new ReservationGUI(this);
-//        });
 
         // Register agent services
         registerService();
@@ -51,6 +48,7 @@ public class ReservationAgent extends Agent {
                 ACLMessage msg = receive(mt);
 
                 if (msg != null) {
+                    showGUI();
                     handleMessage(msg);
                 } else {
                     block();
@@ -64,6 +62,13 @@ public class ReservationAgent extends Agent {
         });
     }
 
+    private void showGUI() {
+        if (gui == null) {
+            gui = new ReservationGUI(this);
+        }
+        gui.setVisible(true);
+    }
+
     private void registerService() {
         DFAgentDescription dfd = new DFAgentDescription();
         dfd.setName(getAID());
@@ -75,6 +80,34 @@ public class ReservationAgent extends Agent {
             DFService.register(this, dfd);
         } catch (FIPAException fe) {
             fe.printStackTrace();
+        }
+    }
+
+    public void redirectToHome() {
+        // Create and send a message to the master agent
+        ACLMessage msg = new ACLMessage(ACLMessage.REQUEST);
+        msg.setContent("SHOW_HOME_GUI");
+
+        // Find the master agent
+        DFAgentDescription template = new DFAgentDescription();
+        ServiceDescription sd = new ServiceDescription();
+        sd.setType("master");
+        template.addServices(sd);
+
+        try {
+            DFAgentDescription[] result = DFService.search(this, template);
+            if (result.length > 0) {
+                msg.addReceiver(result[0].getName());
+                send(msg);
+            }
+        } catch (FIPAException fe) {
+            fe.printStackTrace();
+        }
+
+        // Dispose of the current GUI
+        if (gui != null) {
+            gui.dispose();
+            gui = null;
         }
     }
 
@@ -164,6 +197,33 @@ public class ReservationAgent extends Agent {
             e.printStackTrace();
             return false;
         }
+    }
+
+    public List<Map<String, Object>> getAllReservations() {
+        List<Map<String, Object>> reservations = new ArrayList<>();
+        String sql = "SELECT r.*, v.make, v.model, r.customer_id FROM reservations r " +
+                "JOIN vehicles v ON r.vehicle_id = v.vehicle_id " +
+                "ORDER BY r.start_date DESC";
+
+        try (Statement stmt = dbConnection.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            while (rs.next()) {
+                Map<String, Object> reservation = new HashMap<>();
+                reservation.put("reservationId", rs.getInt("reservation_id"));
+                reservation.put("customerId", rs.getInt("customer_id"));
+                reservation.put("startDate", rs.getString("start_date"));
+                reservation.put("endDate", rs.getString("end_date"));
+                reservation.put("status", rs.getString("status"));
+                reservation.put("totalCost", rs.getDouble("total_cost"));
+                reservation.put("vehicle", rs.getString("make") + " " + rs.getString("model"));
+                reservations.add(reservation);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        return reservations;
     }
 
     public List<Map<String, Object>> getAvailableVehicles() {

@@ -2,6 +2,7 @@ package agents;
 
 // VehicleManagementAgent.java
 import database.DatabaseConnection;
+import gui.RegistrationGUI;
 import gui.VehicleManagementGUI;
 import jade.core.Agent;
 import jade.core.behaviours.*;
@@ -25,10 +26,6 @@ public class VehicleManagementAgent extends Agent {
         // Initialize database connection
         setupDatabase();
 
-        // Create and show GUI
-//        gui = new VehicleManagementGUI(this);
-//        gui.display();
-
         // Register the agent services
         registerService();
 
@@ -39,6 +36,7 @@ public class VehicleManagementAgent extends Agent {
                 ACLMessage msg = receive(mt);
 
                 if (msg != null) {
+                    showGUI();
                     String content = msg.getContent();
                     ACLMessage reply = msg.createReply();
 
@@ -74,6 +72,12 @@ public class VehicleManagementAgent extends Agent {
         });
     }
 
+    private void showGUI() {
+        if (gui == null) {
+            gui = new VehicleManagementGUI(this);
+        }
+        gui.setVisible(true);
+    }
     private void setupDatabase() {
         try {
 //            Class.forName("com.mysql.jdbc.Driver");
@@ -81,6 +85,47 @@ public class VehicleManagementAgent extends Agent {
         } catch (Exception e) {
             e.printStackTrace();
             doDelete();
+        }
+    }
+
+    public void redirectToHome() {
+        // Create and send a message to the master agent
+        ACLMessage msg = new ACLMessage(ACLMessage.REQUEST);
+        msg.setContent("SHOW_HOME_GUI");
+
+        // Find the master agent
+        DFAgentDescription template = new DFAgentDescription();
+        ServiceDescription sd = new ServiceDescription();
+        sd.setType("master");
+        template.addServices(sd);
+
+        try {
+            DFAgentDescription[] result = DFService.search(this, template);
+            if (result.length > 0) {
+                msg.addReceiver(result[0].getName());
+                send(msg);
+            }
+        } catch (FIPAException fe) {
+            fe.printStackTrace();
+        }
+
+        // Dispose of the current GUI
+        if (gui != null) {
+            gui.dispose();
+            gui = null;
+        }
+    }
+
+    public boolean deleteVehicle(int vehicleId) {
+        String sql = "DELETE FROM vehicles WHERE vehicle_id = ? AND status != 'RENTED'";
+
+        try (PreparedStatement pstmt = dbConnection.prepareStatement(sql)) {
+            pstmt.setInt(1, vehicleId);
+            int result = pstmt.executeUpdate();
+            return result > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
         }
     }
 

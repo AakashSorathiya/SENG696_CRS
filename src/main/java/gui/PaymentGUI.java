@@ -1,6 +1,5 @@
 package gui;
 
-// PaymentGUI.java
 import agents.PaymentAgent;
 
 import javax.swing.*;
@@ -8,13 +7,13 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.*;
-import java.util.*;
 import java.text.SimpleDateFormat;
+import java.util.*;
 import java.util.List;
 
 public class PaymentGUI extends JFrame {
     private PaymentAgent myAgent;
-
+    private JSplitPane splitPane;
     private JTextField reservationIdField;
     private JTextField amountField;
     private JComboBox<String> paymentMethodComboBox;
@@ -31,18 +30,52 @@ public class PaymentGUI extends JFrame {
         JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        // Create and add all panels
-        mainPanel.add(createPaymentPanel(), BorderLayout.NORTH);
-        mainPanel.add(createButtonPanel(), BorderLayout.CENTER);
-        mainPanel.add(createTablePanel(), BorderLayout.CENTER);
+        // Top panel for the "Home" button
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JButton homeButton = new JButton("Home");
+        homeButton.addActionListener(e -> goToHome());
+        topPanel.add(homeButton);
+
+        // Create left and right components
+        JPanel leftComponent = createTablePanel();
+        JPanel rightComponent = new JPanel(new BorderLayout(10, 10));
+        rightComponent.add(createPaymentPanel(), BorderLayout.CENTER);
+        rightComponent.add(createButtonPanel(), BorderLayout.SOUTH);
+
+        // Set preferred sizes for both components
+        leftComponent.setPreferredSize(new Dimension(400, 500));
+        rightComponent.setPreferredSize(new Dimension(400, 500));
+
+        // Create split pane with both components
+        splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftComponent, rightComponent);
+        splitPane.setResizeWeight(0.5); // Set initial division to 50-50
+        splitPane.setContinuousLayout(true); // Enable continuous layout while dragging
+        splitPane.setOneTouchExpandable(true); // Add one-touch expand/collapse buttons
+
+        // Add components to main panel
+        mainPanel.add(topPanel, BorderLayout.NORTH);
+        mainPanel.add(splitPane, BorderLayout.CENTER);
         mainPanel.add(createStatusPanel(), BorderLayout.SOUTH);
 
         // Set up frame
         setContentPane(mainPanel);
         setupWindowBehavior();
         refreshPaymentTable();
+
+        // Set minimum sizes for split pane components
+        leftComponent.setMinimumSize(new Dimension(200, 200));
+        rightComponent.setMinimumSize(new Dimension(200, 200));
+
+        // Pack and display
         pack();
         centerOnScreen();
+
+        // Set the divider location after packing
+        SwingUtilities.invokeLater(() -> {
+            int width = getWidth();
+            splitPane.setDividerLocation(width / 2);
+        });
+
         setVisible(true);
     }
 
@@ -75,11 +108,15 @@ public class PaymentGUI extends JFrame {
         paymentMethodComboBox = new JComboBox<>(methods);
         panel.add(paymentMethodComboBox, gbc);
 
+        // Add some padding
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
         return panel;
     }
 
     private JPanel createButtonPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 5));
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 0));
 
         addButton(panel, "Process Payment", e -> processPayment());
         addButton(panel, "Process Refund", e -> processRefund());
@@ -87,12 +124,6 @@ public class PaymentGUI extends JFrame {
         addButton(panel, "Clear Form", e -> clearForm());
 
         return panel;
-    }
-
-    private void addButton(JPanel panel, String text, ActionListener listener) {
-        JButton button = new JButton(text);
-        button.addActionListener(listener);
-        panel.add(button);
     }
 
     private JPanel createTablePanel() {
@@ -114,9 +145,11 @@ public class PaymentGUI extends JFrame {
         paymentsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         paymentsTable.getSelectionModel().addListSelectionListener(e -> fillFormFromSelection());
 
-        // Add custom renderers for currency and dates
+        // Configure the amount column to right-align and format as currency
         paymentsTable.getColumnModel().getColumn(3).setCellRenderer(new DefaultTableCellRenderer() {
-            { setHorizontalAlignment(SwingConstants.RIGHT); }
+            {
+                setHorizontalAlignment(SwingConstants.RIGHT);
+            }
             @Override
             public void setValue(Object value) {
                 setText(value instanceof Double ? String.format("$%.2f", value) : "");
@@ -125,6 +158,10 @@ public class PaymentGUI extends JFrame {
 
         JScrollPane scrollPane = new JScrollPane(paymentsTable);
         panel.add(scrollPane, BorderLayout.CENTER);
+
+        // Add some padding
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
         return panel;
     }
 
@@ -138,6 +175,18 @@ public class PaymentGUI extends JFrame {
         panel.add(scrollPane, BorderLayout.CENTER);
 
         return panel;
+    }
+
+    private void goToHome() {
+        this.setVisible(false);
+        clearForm();
+        myAgent.redirectToHome();
+    }
+
+    private void addButton(JPanel panel, String text, ActionListener listener) {
+        JButton button = new JButton(text);
+        button.addActionListener(listener);
+        panel.add(button);
     }
 
     private void setupWindowBehavior() {

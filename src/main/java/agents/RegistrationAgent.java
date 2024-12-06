@@ -1,6 +1,7 @@
 package agents;
 
 import database.DatabaseConnection;
+import gui.PaymentGUI;
 import gui.RegistrationGUI;
 import jade.core.Agent;
 import jade.core.behaviours.CyclicBehaviour;
@@ -51,6 +52,7 @@ public class RegistrationAgent extends Agent {
                 ACLMessage msg = receive(mt);
 
                 if (msg != null) {
+                    showGUI();
                     handleMessage(msg);
                 } else {
                     block();
@@ -62,6 +64,41 @@ public class RegistrationAgent extends Agent {
                 return false;
             }
         });
+    }
+
+    public void redirectToHome() {
+        // Create and send a message to the master agent
+        ACLMessage msg = new ACLMessage(ACLMessage.REQUEST);
+        msg.setContent("SHOW_HOME_GUI");
+
+        // Find the master agent
+        DFAgentDescription template = new DFAgentDescription();
+        ServiceDescription sd = new ServiceDescription();
+        sd.setType("master");
+        template.addServices(sd);
+
+        try {
+            DFAgentDescription[] result = DFService.search(this, template);
+            if (result.length > 0) {
+                msg.addReceiver(result[0].getName());
+                send(msg);
+            }
+        } catch (FIPAException fe) {
+            fe.printStackTrace();
+        }
+
+        // Dispose of the current GUI
+        if (gui != null) {
+            gui.dispose();
+            gui = null;
+        }
+    }
+
+    private void showGUI() {
+        if (gui == null) {
+            gui = new RegistrationGUI(this);
+        }
+        gui.setVisible(true);
     }
 
     private void registerService() {

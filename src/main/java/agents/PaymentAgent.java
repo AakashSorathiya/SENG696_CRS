@@ -23,10 +23,6 @@ public class PaymentAgent extends Agent {
         // Initialize database connection
         setupDatabase();
 
-        // Create and show GUI
-//        gui = new PaymentGUI(this);
-//        gui.display();
-
         // Register the agent services
         registerService();
 
@@ -84,7 +80,33 @@ public class PaymentAgent extends Agent {
             doDelete();
         }
     }
+    public void redirectToHome() {
+        // Create and send a message to the master agent
+        ACLMessage msg = new ACLMessage(ACLMessage.REQUEST);
+        msg.setContent("SHOW_HOME_GUI");
 
+        // Find the master agent
+        DFAgentDescription template = new DFAgentDescription();
+        ServiceDescription sd = new ServiceDescription();
+        sd.setType("master");
+        template.addServices(sd);
+
+        try {
+            DFAgentDescription[] result = DFService.search(this, template);
+            if (result.length > 0) {
+                msg.addReceiver(result[0].getName());
+                send(msg);
+            }
+        } catch (FIPAException fe) {
+            fe.printStackTrace();
+        }
+
+        // Dispose of the current GUI
+        if (gui != null) {
+            gui.dispose();
+            gui = null;
+        }
+    }
     private void registerService() {
         DFAgentDescription dfd = new DFAgentDescription();
         dfd.setName(getAID());

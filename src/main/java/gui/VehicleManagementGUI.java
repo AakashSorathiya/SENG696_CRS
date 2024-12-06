@@ -1,9 +1,9 @@
 package gui;
 
-// VehicleManagementGUI.java
 import agents.VehicleManagementAgent;
 
 import javax.swing.*;
+import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.*;
@@ -24,93 +24,173 @@ public class VehicleManagementGUI extends JFrame {
     private JTable vehiclesTable;
     private DefaultTableModel tableModel;
     private JTextArea statusArea;
+    private JButton addButton;
+    private JButton updateButton;
+    private JButton deleteButton;
+    private JButton clearButton;
+    private JSplitPane splitPane;
 
     public VehicleManagementGUI(VehicleManagementAgent agent) {
         super("Car Rental System - Vehicle Management");
         this.myAgent = agent;
+        setupGUI();
+    }
 
-        // Main panel with spacing
-        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
-        mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+    private void setupGUI() {
+        setLayout(new BorderLayout(10, 10));
+        ((JPanel) getContentPane()).setBorder(new EmptyBorder(10, 10, 10, 10));
 
-        // Create and add all panels
-        mainPanel.add(createFormPanel(), BorderLayout.NORTH);
-        mainPanel.add(createButtonPanel(), BorderLayout.CENTER);
-        mainPanel.add(createTablePanel(), BorderLayout.CENTER);
-        mainPanel.add(createStatusPanel(), BorderLayout.SOUTH);
+        // Top panel with home button
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JButton homeButton = new JButton("Home");
+        homeButton.setPreferredSize(new Dimension(100, 30));
+        homeButton.setFont(new Font("Arial", Font.PLAIN, 14));
+        homeButton.addActionListener(e -> goToHome());
+        topPanel.add(homeButton);
+        add(topPanel, BorderLayout.NORTH);
 
-        // Set up frame
-        setContentPane(mainPanel);
-        setupWindowBehavior();
+        // Main split pane
+        splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+        splitPane.setOneTouchExpandable(true);
+        splitPane.setContinuousLayout(true);
+
+        // Left panel - Vehicle Form
+        JPanel leftPanel = createFormPanel();
+        leftPanel.setPreferredSize(new Dimension(500, 600));
+        splitPane.setLeftComponent(leftPanel);
+
+        // Right panel - Vehicles Table
+        JPanel rightPanel = createTablePanel();
+        rightPanel.setPreferredSize(new Dimension(600, 600));
+        splitPane.setRightComponent(rightPanel);
+
+        add(splitPane, BorderLayout.CENTER);
+
+        // Status Panel at bottom
+        add(createStatusPanel(), BorderLayout.SOUTH);
+
+        // Window settings
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        addWindowListener(new WindowAdapter() {
+            public void windowClosing(WindowEvent e) {
+                myAgent.doDelete();
+            }
+        });
+
+        setMinimumSize(new Dimension(1400, 800));
+
+        // Pack and set divider
+        pack();
+        SwingUtilities.invokeLater(() -> {
+            splitPane.setDividerLocation(0.4);
+        });
+
+        setLocationRelativeTo(null);
         refreshVehicleTable();
+        setVisible(true);
     }
 
     private JPanel createFormPanel() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder("Vehicle Details"),
+                BorderFactory.createEmptyBorder(10, 10, 10, 10)));
+
+        // Form fields panel
         JPanel formPanel = new JPanel(new GridBagLayout());
-        formPanel.setBorder(BorderFactory.createTitledBorder("Vehicle Details"));
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        // Create form fields
-        createFormFields(formPanel, gbc);
+        // Create and add form fields
+        addLabelAndField(formPanel, gbc, 0, "Make:", makeField = createStyledTextField());
+        addLabelAndField(formPanel, gbc, 1, "Model:", modelField = createStyledTextField());
+        addLabelAndField(formPanel, gbc, 2, "Year:", yearField = createStyledTextField());
+        addLabelAndField(formPanel, gbc, 3, "Color:", colorField = createStyledTextField());
+        addLabelAndField(formPanel, gbc, 4, "License Plate:", licensePlateField = createStyledTextField());
+        addLabelAndField(formPanel, gbc, 5, "Daily Rate:", dailyRateField = createStyledTextField());
 
-        return formPanel;
-    }
+        // Status ComboBox
+        gbc.gridx = 0;
+        gbc.gridy = 6;
+        formPanel.add(createStyledLabel("Status:"), gbc);
 
-    private void createFormFields(JPanel panel, GridBagConstraints gbc) {
-        // Row 1: Make and Model
-        addFormField(panel, gbc, 0, 0, "Make:", makeField = new JTextField(15));
-        addFormField(panel, gbc, 2, 0, "Model:", modelField = new JTextField(15));
-
-        // Row 2: Year and Color
-        addFormField(panel, gbc, 0, 1, "Year:", yearField = new JTextField(15));
-        addFormField(panel, gbc, 2, 1, "Color:", colorField = new JTextField(15));
-
-        // Row 3: License Plate and Daily Rate
-        addFormField(panel, gbc, 0, 2, "License Plate:", licensePlateField = new JTextField(15));
-        addFormField(panel, gbc, 2, 2, "Daily Rate:", dailyRateField = new JTextField(15));
-
-        // Row 4: Status
-        gbc.gridx = 0; gbc.gridy = 3;
-        panel.add(new JLabel("Status:"), gbc);
         gbc.gridx = 1;
         String[] statuses = {"AVAILABLE", "RESERVED", "RENTED", "MAINTENANCE"};
         statusComboBox = new JComboBox<>(statuses);
-        panel.add(statusComboBox, gbc);
+        statusComboBox.setFont(new Font("Arial", Font.PLAIN, 14));
+        formPanel.add(statusComboBox, gbc);
+
+        panel.add(formPanel, BorderLayout.CENTER);
+        panel.add(createButtonsPanel(), BorderLayout.SOUTH);
+
+        return panel;
     }
 
-    private void addFormField(JPanel panel, GridBagConstraints gbc, int x, int y, String label, JTextField field) {
-        gbc.gridx = x; gbc.gridy = y;
-        panel.add(new JLabel(label), gbc);
-        gbc.gridx = x + 1;
+    private void addLabelAndField(JPanel panel, GridBagConstraints gbc, int row, String labelText, JTextField field) {
+        JLabel label = createStyledLabel(labelText);
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        gbc.gridwidth = 1;
+        panel.add(label, gbc);
+
+        gbc.gridx = 1;
+        field.setPreferredSize(new Dimension(300, 30));
         panel.add(field, gbc);
     }
 
-    private JPanel createButtonPanel() {
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 5));
+    private JTextField createStyledTextField() {
+        JTextField field = new JTextField();
+        field.setFont(new Font("Arial", Font.PLAIN, 14));
+        return field;
+    }
 
-        // Create and add buttons
-        addButton(buttonPanel, "Add Vehicle", e -> addVehicle());
-        addButton(buttonPanel, "Update Vehicle", e -> updateSelectedVehicle());
-        addButton(buttonPanel, "Set Maintenance", e -> setMaintenanceStatus());
-        addButton(buttonPanel, "Refresh", e -> refreshVehicleTable());
-        addButton(buttonPanel, "Clear Form", e -> clearForm());
+    private JLabel createStyledLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setFont(new Font("Arial", Font.BOLD, 14));
+        return label;
+    }
+
+    private JPanel createButtonsPanel() {
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 15, 15));
+        buttonPanel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
+
+        addButton = createStyledButton("Add Vehicle");
+        updateButton = createStyledButton("Update Vehicle");
+        deleteButton = createStyledButton("Delete Vehicle");
+        clearButton = createStyledButton("Clear");
+
+        // Add action listeners
+        addButton.addActionListener(e -> addVehicle());
+        updateButton.addActionListener(e -> updateVehicle());
+        deleteButton.addActionListener(e -> deleteVehicle());
+        clearButton.addActionListener(e -> clearForm());
+
+        // Initially disable update and delete buttons
+        updateButton.setEnabled(false);
+        deleteButton.setEnabled(false);
+
+        buttonPanel.add(addButton);
+        buttonPanel.add(updateButton);
+        buttonPanel.add(deleteButton);
+        buttonPanel.add(clearButton);
 
         return buttonPanel;
     }
 
-    private void addButton(JPanel panel, String text, ActionListener listener) {
+    private JButton createStyledButton(String text) {
         JButton button = new JButton(text);
-        button.addActionListener(listener);
-        panel.add(button);
+        button.setPreferredSize(new Dimension(120, 35));
+        button.setFont(new Font("Arial", Font.PLAIN, 14));
+        return button;
     }
 
     private JPanel createTablePanel() {
-        JPanel tablePanel = new JPanel(new BorderLayout());
-        tablePanel.setBorder(BorderFactory.createTitledBorder("Vehicle Inventory"));
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder("Vehicle Inventory"),
+                BorderFactory.createEmptyBorder(10, 10, 10, 10)));
 
-        // Create table model
         String[] columnNames = {
                 "ID", "Make", "Model", "Year", "Color", "License Plate",
                 "Status", "Daily Rate", "Last Maintenance", "Next Maintenance"
@@ -122,97 +202,209 @@ public class VehicleManagementGUI extends JFrame {
             }
         };
 
-        // Create and configure table
         vehiclesTable = new JTable(tableModel);
         vehiclesTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        vehiclesTable.getSelectionModel().addListSelectionListener(e -> fillFormFromSelection());
+        vehiclesTable.setFont(new Font("Arial", Font.PLAIN, 14));
+        vehiclesTable.getTableHeader().setFont(new Font("Arial", Font.BOLD, 14));
+        vehiclesTable.setRowHeight(30);
+        vehiclesTable.getSelectionModel().addListSelectionListener(e -> handleTableSelection());
 
-        // Add table to scrollpane
+        // Set column widths
+        vehiclesTable.getColumnModel().getColumn(0).setPreferredWidth(50);  // ID
+        vehiclesTable.getColumnModel().getColumn(1).setPreferredWidth(100); // Make
+        vehiclesTable.getColumnModel().getColumn(2).setPreferredWidth(100); // Model
+        vehiclesTable.getColumnModel().getColumn(3).setPreferredWidth(60);  // Year
+        vehiclesTable.getColumnModel().getColumn(4).setPreferredWidth(80);  // Color
+        vehiclesTable.getColumnModel().getColumn(5).setPreferredWidth(100); // License Plate
+        vehiclesTable.getColumnModel().getColumn(6).setPreferredWidth(100); // Status
+        vehiclesTable.getColumnModel().getColumn(7).setPreferredWidth(80);  // Daily Rate
+        vehiclesTable.getColumnModel().getColumn(8).setPreferredWidth(120); // Last Maintenance
+        vehiclesTable.getColumnModel().getColumn(9).setPreferredWidth(120); // Next Maintenance
+
         JScrollPane scrollPane = new JScrollPane(vehiclesTable);
-        tablePanel.add(scrollPane, BorderLayout.CENTER);
+        panel.add(scrollPane, BorderLayout.CENTER);
 
-        return tablePanel;
+        JButton refreshButton = createStyledButton("Refresh");
+        refreshButton.addActionListener(e -> refreshVehicleTable());
+
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        bottomPanel.add(refreshButton);
+        panel.add(bottomPanel, BorderLayout.SOUTH);
+
+        return panel;
     }
 
     private JPanel createStatusPanel() {
-        JPanel statusPanel = new JPanel(new BorderLayout());
-        statusPanel.setBorder(BorderFactory.createTitledBorder("Status Log"));
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder("Status"),
+                BorderFactory.createEmptyBorder(5, 5, 5, 5)));
 
-        statusArea = new JTextArea(5, 40);
+        statusArea = new JTextArea(4, 40);
         statusArea.setEditable(false);
+        statusArea.setFont(new Font("Arial", Font.PLAIN, 14));
         JScrollPane scrollPane = new JScrollPane(statusArea);
-        statusPanel.add(scrollPane, BorderLayout.CENTER);
 
-        return statusPanel;
+        JButton clearLogButton = createStyledButton("Clear Log");
+        clearLogButton.addActionListener(e -> statusArea.setText(""));
+
+        panel.add(scrollPane, BorderLayout.CENTER);
+        panel.add(clearLogButton, BorderLayout.EAST);
+
+        return panel;
     }
 
-    private void setupWindowBehavior() {
-        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-        addWindowListener(new WindowAdapter() {
-            public void windowClosing(WindowEvent e) {
-                myAgent.doDelete();
-            }
-        });
-        setResizable(true);
-        setMinimumSize(new Dimension(1000, 700));
+    private void goToHome() {
+        this.setVisible(false);
+        clearForm();
+        myAgent.redirectToHome();
     }
 
-    // Action Methods
     private void addVehicle() {
-        try {
-            Map<String, String> vehicleData = getFormData();
-            if (validateFormData(vehicleData)) {
-                if (myAgent.addVehicle(vehicleData)) {
-                    updateStatus("Vehicle added successfully");
-                    clearForm();
-                    refreshVehicleTable();
-                } else {
-                    updateStatus("Failed to add vehicle");
-                }
-            }
-        } catch (Exception e) {
-            updateStatus("Error adding vehicle: " + e.getMessage());
+        if (!validateForm()) return;
+
+        Map<String, String> vehicleData = getFormData();
+        if (myAgent.addVehicle(vehicleData)) {
+            updateStatus("Vehicle added successfully");
+            clearForm();
+            refreshVehicleTable();
+        } else {
+            updateStatus("Failed to add vehicle");
         }
     }
 
-    private void updateSelectedVehicle() {
+    private void updateVehicle() {
+        if (!validateForm()) return;
+
         int selectedRow = vehiclesTable.getSelectedRow();
         if (selectedRow == -1) {
             updateStatus("Please select a vehicle to update");
             return;
         }
 
-        try {
-            Map<String, String> vehicleData = getFormData();
-            vehicleData.put("vehicleId", tableModel.getValueAt(selectedRow, 0).toString());
+        // Get current vehicle status
+        String currentStatus = (String) tableModel.getValueAt(selectedRow, 6);
+        String newStatus = statusComboBox.getSelectedItem().toString();
 
-            if (validateFormData(vehicleData)) {
-                if (myAgent.updateVehicle(vehicleData)) {
-                    updateStatus("Vehicle updated successfully");
-                    refreshVehicleTable();
-                } else {
-                    updateStatus("Failed to update vehicle");
-                }
+        // First, try to update the status if it has changed
+        if (!currentStatus.equals(newStatus)) {
+            int vehicleId = (Integer) tableModel.getValueAt(selectedRow, 0);
+            if (!myAgent.updateVehicleStatus(vehicleId, newStatus)) {
+                updateStatus("Failed to update vehicle status");
+                return;
             }
-        } catch (Exception e) {
-            updateStatus("Error updating vehicle: " + e.getMessage());
+        }
+
+        // Then update other vehicle details
+        Map<String, String> vehicleData = getFormData();
+        vehicleData.put("vehicleId", tableModel.getValueAt(selectedRow, 0).toString());
+
+        if (myAgent.updateVehicle(vehicleData)) {
+            updateStatus("Vehicle updated successfully");
+            clearForm();
+            refreshVehicleTable();
+        } else {
+            updateStatus("Failed to update vehicle");
         }
     }
 
-    private void setMaintenanceStatus() {
+    private void deleteVehicle() {
         int selectedRow = vehiclesTable.getSelectedRow();
         if (selectedRow == -1) {
-            updateStatus("Please select a vehicle to set maintenance status");
+            JOptionPane.showMessageDialog(this,
+                    "Please select a vehicle to delete",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE);
             return;
         }
 
-        int vehicleId = (Integer)tableModel.getValueAt(selectedRow, 0);
-        if (myAgent.setVehicleMaintenanceStatus(vehicleId)) {
-            updateStatus("Maintenance status set successfully");
-            refreshVehicleTable();
-        } else {
-            updateStatus("Failed to set maintenance status");
+        int vehicleId = (Integer) tableModel.getValueAt(selectedRow, 0);
+        String status = (String) tableModel.getValueAt(selectedRow, 6);
+
+        if ("RENTED".equals(status)) {
+            JOptionPane.showMessageDialog(this,
+                    "Cannot delete a rented vehicle",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE);
+            return;
         }
+
+        int confirm = JOptionPane.showConfirmDialog(this,
+                "Are you sure you want to delete this vehicle?",
+                "Confirm Deletion",
+                JOptionPane.YES_NO_OPTION);
+
+        if (confirm == JOptionPane.YES_OPTION) {
+            if (myAgent.deleteVehicle(vehicleId)) {
+                updateStatus("Vehicle deleted successfully");
+                clearForm();
+                refreshVehicleTable();
+            } else {
+                updateStatus("Failed to delete vehicle");
+            }
+        }
+    }
+
+    private void handleTableSelection() {
+        int selectedRow = vehiclesTable.getSelectedRow();
+        if (selectedRow >= 0) {
+            makeField.setText((String) tableModel.getValueAt(selectedRow, 1));
+            modelField.setText((String) tableModel.getValueAt(selectedRow, 2));
+            yearField.setText(tableModel.getValueAt(selectedRow, 3).toString());
+            colorField.setText((String) tableModel.getValueAt(selectedRow, 4));
+            licensePlateField.setText((String) tableModel.getValueAt(selectedRow, 5));
+            statusComboBox.setSelectedItem(tableModel.getValueAt(selectedRow, 6));
+            dailyRateField.setText(tableModel.getValueAt(selectedRow, 7).toString());
+
+            updateButton.setEnabled(true);
+            deleteButton.setEnabled(true);
+
+            String status = (String) tableModel.getValueAt(selectedRow, 6);
+            deleteButton.setEnabled(!"RENTED".equals(status));
+        }
+    }
+
+    private void clearForm() {
+        makeField.setText("");
+        modelField.setText("");
+        yearField.setText("");
+        colorField.setText("");
+        licensePlateField.setText("");
+        dailyRateField.setText("");
+        statusComboBox.setSelectedIndex(0);
+        vehiclesTable.clearSelection();
+
+        updateButton.setEnabled(false);
+        deleteButton.setEnabled(false);
+    }
+
+    private boolean validateForm() {
+        if (makeField.getText().trim().isEmpty() ||
+                modelField.getText().trim().isEmpty() ||
+                yearField.getText().trim().isEmpty() ||
+                colorField.getText().trim().isEmpty() ||
+                licensePlateField.getText().trim().isEmpty() ||
+                dailyRateField.getText().trim().isEmpty()) {
+
+            JOptionPane.showMessageDialog(this,
+                    "Please fill in all required fields",
+                    "Validation Error",
+                    JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+
+        try {
+            Integer.parseInt(yearField.getText().trim());
+            Double.parseDouble(dailyRateField.getText().trim());
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this,
+                    "Please enter valid numbers for Year and Daily Rate",
+                    "Validation Error",
+                    JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+
+        return true;
     }
 
     private Map<String, String> getFormData() {
@@ -225,46 +417,6 @@ public class VehicleManagementGUI extends JFrame {
         data.put("dailyRate", dailyRateField.getText().trim());
         data.put("status", statusComboBox.getSelectedItem().toString());
         return data;
-    }
-
-    private boolean validateFormData(Map<String, String> data) {
-        if (data.values().stream().anyMatch(String::isEmpty)) {
-            updateStatus("Please fill in all fields");
-            return false;
-        }
-
-        try {
-            Integer.parseInt(data.get("year"));
-            Double.parseDouble(data.get("dailyRate"));
-        } catch (NumberFormatException e) {
-            updateStatus("Please enter valid numbers for Year and Daily Rate");
-            return false;
-        }
-
-        return true;
-    }
-
-    private void fillFormFromSelection() {
-        int selectedRow = vehiclesTable.getSelectedRow();
-        if (selectedRow >= 0) {
-            makeField.setText((String)tableModel.getValueAt(selectedRow, 1));
-            modelField.setText((String)tableModel.getValueAt(selectedRow, 2));
-            yearField.setText(tableModel.getValueAt(selectedRow, 3).toString());
-            colorField.setText((String)tableModel.getValueAt(selectedRow, 4));
-            licensePlateField.setText((String)tableModel.getValueAt(selectedRow, 5));
-            statusComboBox.setSelectedItem(tableModel.getValueAt(selectedRow, 6));
-            dailyRateField.setText(tableModel.getValueAt(selectedRow, 7).toString());
-        }
-    }
-
-    private void clearForm() {
-        makeField.setText("");
-        modelField.setText("");
-        yearField.setText("");
-        colorField.setText("");
-        licensePlateField.setText("");
-        dailyRateField.setText("");
-        statusComboBox.setSelectedIndex(0);
     }
 
     public void refreshVehicleTable() {
@@ -289,26 +441,40 @@ public class VehicleManagementGUI extends JFrame {
             };
             tableModel.addRow(row);
         }
+
+        // Adjust column widths after data is loaded
+        if (vehicles.size() > 0) {
+            adjustColumnWidths();
+        }
+    }
+
+    private void adjustColumnWidths() {
+        for (int i = 0; i < vehiclesTable.getColumnCount(); i++) {
+            int maxWidth = 0;
+            for (int j = 0; j < vehiclesTable.getRowCount(); j++) {
+                Object value = vehiclesTable.getValueAt(j, i);
+                String stringValue = value != null ? value.toString() : "";
+                int cellWidth = getFontMetrics(vehiclesTable.getFont())
+                        .stringWidth(stringValue) + 20; // Add padding
+                maxWidth = Math.max(maxWidth, cellWidth);
+            }
+            // Set a maximum width to prevent extremely wide columns
+            maxWidth = Math.min(maxWidth, 200);
+            vehiclesTable.getColumnModel().getColumn(i).setPreferredWidth(maxWidth);
+        }
     }
 
     public void updateStatus(String message) {
         SwingUtilities.invokeLater(() -> {
-            statusArea.append(message + "\n");
+            String timestamp = String.format("[%tT] ", new java.util.Date());
+            statusArea.append(timestamp + message + "\n");
             statusArea.setCaretPosition(statusArea.getDocument().getLength());
         });
     }
 
     public void display() {
         pack();
-        centerOnScreen();
+        setLocationRelativeTo(null);
         setVisible(true);
-    }
-
-    private void centerOnScreen() {
-        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
-        setLocation(
-                (screenSize.width - getWidth()) / 2,
-                (screenSize.height - getHeight()) / 2
-        );
     }
 }

@@ -11,6 +11,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.awt.event.*;
 import java.util.List;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+
 
 public class ReservationGUI extends JFrame {
     private ReservationAgent myAgent;
@@ -27,6 +30,7 @@ public class ReservationGUI extends JFrame {
     private JButton calculateButton;
     private JButton clearButton;
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm");
+    private final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     public ReservationGUI(ReservationAgent agent) {
         super("Car Rental System - Reservations");
@@ -38,6 +42,14 @@ public class ReservationGUI extends JFrame {
     private void setupGUI() {
         setLayout(new BorderLayout(10, 10));
         ((JPanel)getContentPane()).setBorder(new EmptyBorder(10, 10, 10, 10));
+
+        JPanel topPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JButton homeButton = new JButton("Home");
+        homeButton.setPreferredSize(new Dimension(100, 30));
+        homeButton.setFont(new Font("Arial", Font.PLAIN, 14));
+        homeButton.addActionListener(e -> goToHome());
+        topPanel.add(homeButton);
+        add(topPanel, BorderLayout.NORTH);
 
         // Main split pane
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
@@ -54,6 +66,7 @@ public class ReservationGUI extends JFrame {
         // Status Panel at bottom
         add(createStatusPanel(), BorderLayout.SOUTH);
 
+
         // Window settings
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
@@ -67,9 +80,111 @@ public class ReservationGUI extends JFrame {
         setVisible(true);
     }
 
+
+    private JPanel createReservationsPanel() {
+        JPanel panel = new JPanel(new BorderLayout(5, 5));
+        panel.setBorder(BorderFactory.createTitledBorder("Current Reservations"));
+
+        // Create table model
+        String[] columnNames = {
+                "ID", "Customer ID", "Vehicle", "Start Date", "End Date", "Status", "Total Cost"
+        };
+        tableModel = new DefaultTableModel(columnNames, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
+        // Create and style table
+        reservationsTable = new JTable(tableModel);
+        reservationsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        reservationsTable.setFont(new Font("Arial", Font.PLAIN, 14));
+        reservationsTable.getTableHeader().setFont(new Font("Arial", Font.BOLD, 14));
+        reservationsTable.setRowHeight(30);
+
+        // Configure column widths
+        TableColumnModel columnModel = reservationsTable.getColumnModel();
+        columnModel.getColumn(0).setPreferredWidth(50);  // ID
+        columnModel.getColumn(1).setPreferredWidth(80);  // Customer ID
+        columnModel.getColumn(2).setPreferredWidth(200); // Vehicle
+        columnModel.getColumn(3).setPreferredWidth(100); // Start Date
+        columnModel.getColumn(4).setPreferredWidth(100); // End Date
+        columnModel.getColumn(5).setPreferredWidth(80);  // Status
+        columnModel.getColumn(6).setPreferredWidth(100); // Total Cost
+
+        // Create button panel
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 5));
+
+        // Add refresh button
+        JButton refreshAllButton = createStyledButton("Show All Reservations");
+        refreshAllButton.addActionListener(e -> refreshAllReservations());
+
+        // Add customer search button
+        JButton searchButton = createStyledButton("Search by Customer");
+        searchButton.addActionListener(e -> refreshCustomerReservations());
+
+        // Add cancel button
+        cancelButton = createStyledButton("Cancel Selected");
+        cancelButton.addActionListener(e -> cancelSelectedReservation());
+
+        buttonPanel.add(refreshAllButton);
+        buttonPanel.add(searchButton);
+        buttonPanel.add(cancelButton);
+
+        panel.add(new JScrollPane(reservationsTable), BorderLayout.CENTER);
+        panel.add(buttonPanel, BorderLayout.SOUTH);
+
+        return panel;
+    }
+
+    private void refreshAllReservations() {
+        tableModel.setRowCount(0);
+        List<Map<String, Object>> reservations = myAgent.getAllReservations();
+        populateReservationsTable(reservations);
+        updateStatus("All reservations loaded");
+    }
+
+    private void refreshCustomerReservations() {
+        if (customerIdField.getText().trim().isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "Please enter a customer ID to search",
+                    "Input Required",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        try {
+            int customerId = Integer.parseInt(customerIdField.getText().trim());
+            tableModel.setRowCount(0);
+            List<Map<String, Object>> reservations = myAgent.getCustomerReservations(customerId);
+            populateReservationsTable(reservations);
+            updateStatus("Loaded reservations for customer ID: " + customerId);
+        } catch (NumberFormatException e) {
+            updateStatus("Please enter a valid customer ID");
+        }
+    }
+
+    private void populateReservationsTable(List<Map<String, Object>> reservations) {
+        for (Map<String, Object> reservation : reservations) {
+            Object[] row = {
+                    reservation.get("reservationId"),
+                    reservation.get("customerId"),    // Added Customer ID column
+                    reservation.get("vehicle"),
+                    reservation.get("startDate"),
+                    reservation.get("endDate"),
+                    reservation.get("status"),
+                    String.format("$%.2f", reservation.get("totalCost"))
+            };
+            tableModel.addRow(row);
+        }
+    }
+
     private JPanel createReservationPanel() {
         JPanel panel = new JPanel(new BorderLayout(5, 5));
-        panel.setBorder(BorderFactory.createTitledBorder("New Reservation"));
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder("New Reservation"),
+                BorderFactory.createEmptyBorder(10, 10, 10, 10)));
 
         // Form panel
         JPanel formPanel = new JPanel(new GridBagLayout());
@@ -80,24 +195,30 @@ public class ReservationGUI extends JFrame {
 
         // Customer ID
         gbc.gridx = 0; gbc.gridy = 0;
-        formPanel.add(new JLabel("Customer ID:"), gbc);
+        JLabel customerLabel = createStyledLabel("Customer ID:");
+        formPanel.add(customerLabel, gbc);
         gbc.gridx = 1;
-        customerIdField = new JTextField(15);
+        customerIdField = createStyledTextField();
         formPanel.add(customerIdField, gbc);
 
         // Vehicle Selection
         gbc.gridx = 0; gbc.gridy++;
-        formPanel.add(new JLabel("Vehicle:"), gbc);
+        JLabel vehicleLabel = createStyledLabel("Vehicle:");
+        formPanel.add(vehicleLabel, gbc);
         gbc.gridx = 1;
         vehicleComboBox = new JComboBox<>();
+        vehicleComboBox.setFont(new Font("Arial", Font.PLAIN, 14));
+        vehicleComboBox.setPreferredSize(new Dimension(300, 30));
         vehicleComboBox.addActionListener(e -> updateTotalCost());
         formPanel.add(vehicleComboBox, gbc);
 
-        // Start Date
+        // Start Date - Changed label to show date-only format
         gbc.gridx = 0; gbc.gridy++;
-        formPanel.add(new JLabel("Start Date (yyyy-MM-dd HH:mm):"), gbc);
+        JLabel startLabel = createStyledLabel("Start Date (yyyy-MM-dd):");
+        formPanel.add(startLabel, gbc);
         gbc.gridx = 1;
-        startDateField = new JTextField(15);
+        startDateField = createStyledTextField();
+        startDateField.setToolTipText("Enter date in format: yyyy-MM-dd");
         startDateField.addFocusListener(new FocusAdapter() {
             public void focusLost(FocusEvent e) {
                 updateTotalCost();
@@ -105,11 +226,13 @@ public class ReservationGUI extends JFrame {
         });
         formPanel.add(startDateField, gbc);
 
-        // End Date
+        // End Date - Changed label to show date-only format
         gbc.gridx = 0; gbc.gridy++;
-        formPanel.add(new JLabel("End Date (yyyy-MM-dd HH:mm):"), gbc);
+        JLabel endLabel = createStyledLabel("End Date (yyyy-MM-dd):");
+        formPanel.add(endLabel, gbc);
         gbc.gridx = 1;
-        endDateField = new JTextField(15);
+        endDateField = createStyledTextField();
+        endDateField.setToolTipText("Enter date in format: yyyy-MM-dd");
         endDateField.addFocusListener(new FocusAdapter() {
             public void focusLost(FocusEvent e) {
                 updateTotalCost();
@@ -119,9 +242,10 @@ public class ReservationGUI extends JFrame {
 
         // Total Cost
         gbc.gridx = 0; gbc.gridy++;
-        formPanel.add(new JLabel("Total Cost ($):"), gbc);
+        JLabel costLabel = createStyledLabel("Total Cost ($):");
+        formPanel.add(costLabel, gbc);
         gbc.gridx = 1;
-        totalCostField = new JTextField(15);
+        totalCostField = createStyledTextField();
         totalCostField.setEditable(false);
         formPanel.add(totalCostField, gbc);
 
@@ -131,16 +255,23 @@ public class ReservationGUI extends JFrame {
         return panel;
     }
 
+    private JLabel createStyledLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setFont(new Font("Arial", Font.BOLD, 14));
+        return label;
+    }
+
     private JPanel createButtonPanel() {
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
+        buttonPanel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
 
-        createButton = new JButton("Create Reservation");
+        createButton = createStyledButton("Create Reservation");
         createButton.addActionListener(e -> createReservation());
 
-        calculateButton = new JButton("Calculate Cost");
+        calculateButton = createStyledButton("Calculate Cost");
         calculateButton.addActionListener(e -> updateTotalCost());
 
-        clearButton = new JButton("Clear Form");
+        clearButton = createStyledButton("Clear Form");
         clearButton.addActionListener(e -> clearForm());
 
         buttonPanel.add(createButton);
@@ -150,35 +281,18 @@ public class ReservationGUI extends JFrame {
         return buttonPanel;
     }
 
-    private JPanel createReservationsPanel() {
-        JPanel panel = new JPanel(new BorderLayout(5, 5));
-        panel.setBorder(BorderFactory.createTitledBorder("Current Reservations"));
+    private JTextField createStyledTextField() {
+        JTextField field = new JTextField();
+        field.setPreferredSize(new Dimension(300, 30));
+        field.setFont(new Font("Arial", Font.PLAIN, 14));
+        return field;
+    }
 
-        // Create table model
-        String[] columnNames = {
-                "ID", "Vehicle", "Start Date", "End Date", "Status", "Total Cost"
-        };
-        tableModel = new DefaultTableModel(columnNames, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-        };
-
-        // Create table
-        reservationsTable = new JTable(tableModel);
-        reservationsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-
-        // Add cancel button panel
-        JPanel tableButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        cancelButton = new JButton("Cancel Selected");
-        cancelButton.addActionListener(e -> cancelSelectedReservation());
-        tableButtonPanel.add(cancelButton);
-
-        panel.add(new JScrollPane(reservationsTable), BorderLayout.CENTER);
-        panel.add(tableButtonPanel, BorderLayout.SOUTH);
-
-        return panel;
+    private JButton createStyledButton(String text) {
+        JButton button = new JButton(text);
+        button.setPreferredSize(new Dimension(150, 35));
+        button.setFont(new Font("Arial", Font.PLAIN, 14));
+        return button;
     }
 
     private JPanel createStatusPanel() {
@@ -196,6 +310,12 @@ public class ReservationGUI extends JFrame {
         panel.add(clearLogButton, BorderLayout.EAST);
 
         return panel;
+    }
+
+    private void goToHome() {
+        this.setVisible(false);
+        clearForm();
+        myAgent.redirectToHome();
     }
 
     private void createReservation() {
@@ -258,22 +378,29 @@ public class ReservationGUI extends JFrame {
     private void updateTotalCost() {
         try {
             VehicleItem selectedVehicle = (VehicleItem)vehicleComboBox.getSelectedItem();
-            if (selectedVehicle == null ||
-                    startDateField.getText().trim().isEmpty() ||
-                    endDateField.getText().trim().isEmpty()) {
+            String startDateStr = startDateField.getText().trim();
+            String endDateStr = endDateField.getText().trim();
+
+            if (selectedVehicle == null || startDateStr.isEmpty() || endDateStr.isEmpty()) {
+                totalCostField.setText("");
                 return;
             }
 
-            LocalDateTime startDate = LocalDateTime.parse(
-                    startDateField.getText().trim(),
-                    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-            );
-            LocalDateTime endDate = LocalDateTime.parse(
-                    endDateField.getText().trim(),
-                    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-            );
+            LocalDate startDate = LocalDate.parse(startDateStr, dateFormatter);
+            LocalDate endDate = LocalDate.parse(endDateStr, dateFormatter);
 
-            long days = java.time.Duration.between(startDate, endDate).toDays() + 1;
+            // Calculate number of days between dates (inclusive)
+            long days = endDate.toEpochDay() - startDate.toEpochDay() + 1;
+
+            if (days < 1) {
+                JOptionPane.showMessageDialog(this,
+                        "End date must be after or equal to start date",
+                        "Date Error",
+                        JOptionPane.ERROR_MESSAGE);
+                totalCostField.setText("");
+                return;
+            }
+
             double totalCost = days * selectedVehicle.getDailyRate();
             totalCostField.setText(String.format("%.2f", totalCost));
         } catch (Exception e) {
@@ -307,13 +434,19 @@ public class ReservationGUI extends JFrame {
 
         try {
             Integer.parseInt(customerIdField.getText().trim());
-            LocalDateTime.parse(startDateField.getText().trim(),
-                    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
-            LocalDateTime.parse(endDateField.getText().trim(),
-                    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+            LocalDate startDate = LocalDate.parse(startDateField.getText().trim(), dateFormatter);
+            LocalDate endDate = LocalDate.parse(endDateField.getText().trim(), dateFormatter);
+
+            if (endDate.isBefore(startDate)) {
+                JOptionPane.showMessageDialog(this,
+                        "End date must be after or equal to start date",
+                        "Validation Error",
+                        JOptionPane.ERROR_MESSAGE);
+                return false;
+            }
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this,
-                    "Please enter valid date/time format (yyyy-MM-dd HH:mm)",
+                    "Please enter valid date format (yyyy-MM-dd)",
                     "Validation Error",
                     JOptionPane.ERROR_MESSAGE);
             return false;
@@ -338,27 +471,8 @@ public class ReservationGUI extends JFrame {
             ));
         }
 
-        // Refresh reservations table
-        tableModel.setRowCount(0);
-        if (!customerIdField.getText().trim().isEmpty()) {
-            try {
-                int customerId = Integer.parseInt(customerIdField.getText().trim());
-                List<Map<String, Object>> reservations = myAgent.getCustomerReservations(customerId);
-                for (Map<String, Object> reservation : reservations) {
-                    Object[] row = {
-                            reservation.get("reservationId"),
-                            reservation.get("vehicle"),
-                            reservation.get("startDate"),
-                            reservation.get("endDate"),
-                            reservation.get("status"),
-                            String.format("$%.2f", reservation.get("totalCost"))
-                    };
-                    tableModel.addRow(row);
-                }
-            } catch (NumberFormatException e) {
-                updateStatus("Please enter a valid customer ID");
-            }
-        }
+        // Refresh all reservations
+        refreshAllReservations();
     }
 
     public void updateStatus(String message) {
