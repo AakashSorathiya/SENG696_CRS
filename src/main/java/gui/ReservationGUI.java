@@ -31,6 +31,7 @@ public class ReservationGUI extends JFrame {
     private JButton clearButton;
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm");
     private final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private JButton payButton;
 
     public ReservationGUI(ReservationAgent agent) {
         super("Car Rental System - Reservations");
@@ -66,6 +67,11 @@ public class ReservationGUI extends JFrame {
         // Status Panel at bottom
         add(createStatusPanel(), BorderLayout.SOUTH);
 
+        reservationsTable.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                handleReservationSelection();
+            }
+        });
 
         // Window settings
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
@@ -124,6 +130,11 @@ public class ReservationGUI extends JFrame {
         JButton searchButton = createStyledButton("Search by Customer");
         searchButton.addActionListener(e -> refreshCustomerReservations());
 
+        payButton = createStyledButton("Pay");
+        payButton.addActionListener(e -> initiatePayment());
+        payButton.setEnabled(false);  // Initially disabled until a reservation is selected
+        buttonPanel.add(payButton);
+
         // Add cancel button
         cancelButton = createStyledButton("Cancel Selected");
         cancelButton.addActionListener(e -> cancelSelectedReservation());
@@ -131,6 +142,7 @@ public class ReservationGUI extends JFrame {
         buttonPanel.add(refreshAllButton);
         buttonPanel.add(searchButton);
         buttonPanel.add(cancelButton);
+        buttonPanel.add(payButton);
 
         panel.add(new JScrollPane(reservationsTable), BorderLayout.CENTER);
         panel.add(buttonPanel, BorderLayout.SOUTH);
@@ -274,11 +286,52 @@ public class ReservationGUI extends JFrame {
         clearButton = createStyledButton("Clear Form");
         clearButton.addActionListener(e -> clearForm());
 
+//        payButton = createStyledButton("Pay");
+//        payButton.addActionListener(e -> initiatePayment());
+//        payButton.setEnabled(false);  // Initially disabled until a reservation is selected
+
         buttonPanel.add(createButton);
         buttonPanel.add(calculateButton);
         buttonPanel.add(clearButton);
+//        buttonPanel.add(payButton);
 
         return buttonPanel;
+    }
+
+    private void handleReservationSelection() {
+        int selectedRow = reservationsTable.getSelectedRow();
+        if (selectedRow != -1) {
+            String status = (String) tableModel.getValueAt(selectedRow, 5);
+            // Enable pay button only for PENDING reservations
+            payButton.setEnabled("PENDING".equals(status));
+        } else {
+            payButton.setEnabled(false);
+        }
+    }
+
+    // Add this method to initiate payment
+    private void initiatePayment() {
+        int selectedRow = reservationsTable.getSelectedRow();
+        if (selectedRow != -1) {
+            int reservationId = (Integer) tableModel.getValueAt(selectedRow, 0);
+            double totalCost = Double.parseDouble(((String) tableModel.getValueAt(selectedRow, 6))
+                    .replace("$", "").trim());
+
+            // Create pending payment record
+            Map<String, String> paymentData = new HashMap<>();
+            paymentData.put("reservationId", String.valueOf(reservationId));
+            paymentData.put("amount", String.format("%.2f", totalCost));
+            paymentData.put("status", "PENDING");
+
+            if (myAgent.createPendingPayment(paymentData)) {
+                updateStatus("Payment initiated for reservation " + reservationId);
+                // Show payment GUI
+                myAgent.showPaymentGUI();
+                this.setVisible(false);
+            } else {
+                updateStatus("Failed to initiate payment");
+            }
+        }
     }
 
     private JTextField createStyledTextField() {

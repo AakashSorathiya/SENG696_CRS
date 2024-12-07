@@ -22,6 +22,7 @@ public class PaymentGUI extends JFrame {
     private JTextArea statusArea;
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
+
     public PaymentGUI(PaymentAgent agent) {
         super("Car Rental System - Payment Management");
         this.myAgent = agent;
@@ -202,13 +203,27 @@ public class PaymentGUI extends JFrame {
 
     private void processPayment() {
         try {
+            int selectedRow = paymentsTable.getSelectedRow();
+            if (selectedRow == -1) {
+                updateStatus("Please select a pending payment to process");
+                return;
+            }
+
+            String currentStatus = (String) tableModel.getValueAt(selectedRow, 6);
+            if (!"PENDING".equals(currentStatus)) {
+                updateStatus("Can only process pending payments");
+                return;
+            }
+
+            int paymentId = (Integer) tableModel.getValueAt(selectedRow, 0);
             Map<String, String> paymentData = new HashMap<>();
+            paymentData.put("paymentId", String.valueOf(paymentId));
             paymentData.put("reservationId", reservationIdField.getText().trim());
             paymentData.put("amount", amountField.getText().trim());
             paymentData.put("paymentMethod", paymentMethodComboBox.getSelectedItem().toString());
 
             if (validatePaymentData(paymentData)) {
-                if (myAgent.processPayment(paymentData)) {
+                if (myAgent.updatePayment(paymentData)) {
                     updateStatus("Payment processed successfully");
                     clearForm();
                     refreshPaymentTable();
@@ -218,6 +233,23 @@ public class PaymentGUI extends JFrame {
             }
         } catch (Exception e) {
             updateStatus("Error processing payment: " + e.getMessage());
+        }
+    }
+
+    // Add a modified fillFormFromSelection() method
+    private void fillFormFromSelection() {
+        int selectedRow = paymentsTable.getSelectedRow();
+        if (selectedRow >= 0) {
+            reservationIdField.setText(tableModel.getValueAt(selectedRow, 1).toString());
+            Double amount = (Double) tableModel.getValueAt(selectedRow, 3);
+            amountField.setText(String.format("%.2f", amount));
+            String status = (String) tableModel.getValueAt(selectedRow, 6);
+
+            // Disable editing for non-pending payments
+            boolean isPending = "PENDING".equals(status);
+            reservationIdField.setEnabled(false);  // Never allow reservation ID editing
+            amountField.setEnabled(isPending);
+            paymentMethodComboBox.setEnabled(isPending);
         }
     }
 
@@ -231,8 +263,19 @@ public class PaymentGUI extends JFrame {
         int paymentId = (Integer) tableModel.getValueAt(selectedRow, 0);
         String currentStatus = (String) tableModel.getValueAt(selectedRow, 6);
 
-        if ("REFUNDED".equals(currentStatus)) {
-            updateStatus("This payment has already been refunded");
+        // Check if payment is eligible for refund
+        if (!"COMPLETED".equals(currentStatus)) {
+            String message = currentStatus.equals("REFUNDED")
+                    ? "This payment has already been refunded"
+                    : "Only completed payments can be refunded";
+
+            JOptionPane.showMessageDialog(
+                    this,
+                    message,
+                    "Refund Not Allowed",
+                    JOptionPane.WARNING_MESSAGE
+            );
+            updateStatus(message);
             return;
         }
 
@@ -273,16 +316,6 @@ public class PaymentGUI extends JFrame {
         }
 
         return true;
-    }
-
-    private void fillFormFromSelection() {
-        int selectedRow = paymentsTable.getSelectedRow();
-        if (selectedRow >= 0) {
-            reservationIdField.setText(tableModel.getValueAt(selectedRow, 1).toString());
-            amountField.setText(tableModel.getValueAt(selectedRow, 3).toString().replace("$", ""));
-            String method = (String) tableModel.getValueAt(selectedRow, 5);
-            paymentMethodComboBox.setSelectedItem(method);
-        }
     }
 
     private void clearForm() {

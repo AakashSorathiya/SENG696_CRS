@@ -321,6 +321,44 @@ public class ReservationAgent extends Agent {
         }
     }
 
+    public boolean createPendingPayment(Map<String, String> paymentData) {
+        String sql = "INSERT INTO payments (reservation_id, amount, payment_status) VALUES (?, ?, 'PENDING')";
+
+        try (PreparedStatement pstmt = dbConnection.prepareStatement(sql)) {
+            pstmt.setInt(1, Integer.parseInt(paymentData.get("reservationId")));
+            pstmt.setDouble(2, Double.parseDouble(paymentData.get("amount")));
+
+            int result = pstmt.executeUpdate();
+            return result > 0;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    // Add this method to show payment GUI
+    public void showPaymentGUI() {
+        // Create and send a message to the payment agent
+        ACLMessage msg = new ACLMessage(ACLMessage.REQUEST);
+        msg.setContent("SHOW_PAYMENT_GUI");
+
+        // Find the payment agent
+        DFAgentDescription template = new DFAgentDescription();
+        ServiceDescription sd = new ServiceDescription();
+        sd.setType("payment");
+        template.addServices(sd);
+
+        try {
+            DFAgentDescription[] result = DFService.search(this, template);
+            if (result.length > 0) {
+                msg.addReceiver(result[0].getName());
+                send(msg);
+            }
+        } catch (FIPAException fe) {
+            fe.printStackTrace();
+        }
+    }
+
     protected void takeDown() {
         try {
             DFService.deregister(this);
