@@ -39,7 +39,7 @@ public class ReservationGUI extends JFrame {
         super("Car Rental System - Reservations");
         this.myAgent = agent;
         this.currentRole = role;
-        this.currentCustomerId = customerId;
+        this.currentCustomerId = customerId;  // Make sure this is being set
         setupGUI();
         refreshData();
     }
@@ -77,7 +77,6 @@ public class ReservationGUI extends JFrame {
             }
         });
 
-        // Window settings
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
             public void windowClosing(WindowEvent e) {
@@ -95,10 +94,15 @@ public class ReservationGUI extends JFrame {
         JPanel panel = new JPanel(new BorderLayout(5, 5));
         panel.setBorder(BorderFactory.createTitledBorder("Current Reservations"));
 
-        // Create table model
         String[] columnNames = {
-                "ID", "Customer ID", "Vehicle", "Start Date", "End Date", "Status", "Total Cost"
+                "ID", "Vehicle", "Start Date", "End Date", "Status", "Total Cost"
         };
+
+        // If admin, add Customer ID column
+        if ("ADMIN".equals(currentRole)) {
+            columnNames = new String[]{"ID", "Customer ID", "Vehicle", "Start Date", "End Date", "Status", "Total Cost"};
+        }
+
         tableModel = new DefaultTableModel(columnNames, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -106,7 +110,6 @@ public class ReservationGUI extends JFrame {
             }
         };
 
-        // Create and style table
         reservationsTable = new JTable(tableModel);
         reservationsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         reservationsTable.setFont(new Font("Arial", Font.PLAIN, 14));
@@ -115,43 +118,86 @@ public class ReservationGUI extends JFrame {
 
         // Configure column widths
         TableColumnModel columnModel = reservationsTable.getColumnModel();
-        columnModel.getColumn(0).setPreferredWidth(50);  // ID
-        columnModel.getColumn(1).setPreferredWidth(80);  // Customer ID
-        columnModel.getColumn(2).setPreferredWidth(200); // Vehicle
-        columnModel.getColumn(3).setPreferredWidth(100); // Start Date
-        columnModel.getColumn(4).setPreferredWidth(100); // End Date
-        columnModel.getColumn(5).setPreferredWidth(80);  // Status
-        columnModel.getColumn(6).setPreferredWidth(100); // Total Cost
 
-        // Create button panel
+        if ("ADMIN".equals(currentRole)) {
+            columnModel.getColumn(0).setPreferredWidth(50);  // ID
+            columnModel.getColumn(1).setPreferredWidth(80);  // Customer ID
+            columnModel.getColumn(2).setPreferredWidth(200); // Vehicle
+            columnModel.getColumn(3).setPreferredWidth(100); // Start Date
+            columnModel.getColumn(4).setPreferredWidth(100); // End Date
+            columnModel.getColumn(5).setPreferredWidth(80);  // Status
+            columnModel.getColumn(6).setPreferredWidth(100); // Total Cost
+        } else {
+            columnModel.getColumn(0).setPreferredWidth(50);  // ID
+            columnModel.getColumn(1).setPreferredWidth(200); // Vehicle
+            columnModel.getColumn(2).setPreferredWidth(100); // Start Date
+            columnModel.getColumn(3).setPreferredWidth(100); // End Date
+            columnModel.getColumn(4).setPreferredWidth(80);  // Status
+            columnModel.getColumn(5).setPreferredWidth(100); // Total Cost
+        }
+
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 5));
 
-        // Add refresh button
-        JButton refreshAllButton = createStyledButton("Show All Reservations");
-        refreshAllButton.addActionListener(e -> refreshAllReservations());
+        // Only show admin-specific buttons for admin role
+        if ("ADMIN".equals(currentRole)) {
+            JButton refreshAllButton = createStyledButton("Show All Reservations");
+            refreshAllButton.addActionListener(e -> refreshAllReservations());
 
-        // Add customer search button
-        JButton searchButton = createStyledButton("Search by Customer");
-        searchButton.addActionListener(e -> refreshCustomerReservations());
+            JButton searchButton = createStyledButton("Search by Customer");
+            searchButton.addActionListener(e -> refreshCustomerReservations());
+
+            buttonPanel.add(refreshAllButton);
+            buttonPanel.add(searchButton);
+        } else {
+            // Add refresh button for normal users
+            JButton refreshButton = createStyledButton("Refresh");
+            refreshButton.addActionListener(e -> {
+                tableModel.setRowCount(0);
+                List<Map<String, Object>> reservations = myAgent.getCustomerReservations(currentCustomerId);
+                populateReservationsTable(reservations);
+                updateStatus("Reservations refreshed");
+            });
+            buttonPanel.add(refreshButton);
+        }
 
         payButton = createStyledButton("Pay");
         payButton.addActionListener(e -> initiatePayment());
-        payButton.setEnabled(false);  // Initially disabled until a reservation is selected
-        buttonPanel.add(payButton);
+        payButton.setEnabled(false);
 
-        // Add cancel button
         cancelButton = createStyledButton("Cancel Selected");
         cancelButton.addActionListener(e -> cancelSelectedReservation());
 
-        if ("ADMIN".equals(currentRole)) {
-            buttonPanel.add(refreshAllButton);
-            buttonPanel.add(searchButton);
-        }
-
+        buttonPanel.add(payButton);
         buttonPanel.add(cancelButton);
 
         panel.add(new JScrollPane(reservationsTable), BorderLayout.CENTER);
         panel.add(buttonPanel, BorderLayout.SOUTH);
+
+        // Load initial data based on role
+        if ("ADMIN".equals(currentRole)) {
+            refreshAllReservations();
+        } else {
+            // For normal users, only show their reservations
+            tableModel.setRowCount(0);
+            List<Map<String, Object>> reservations = myAgent.getCustomerReservations(currentCustomerId);
+            populateReservationsTable(reservations);
+        }
+
+        // Add selection listener for managing pay button
+        reservationsTable.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                int selectedRow = reservationsTable.getSelectedRow();
+                if (selectedRow != -1) {
+                    // Get status column index based on role
+                    int statusColumnIndex = "ADMIN".equals(currentRole) ? 5 : 4;
+                    String status = (String) tableModel.getValueAt(selectedRow, statusColumnIndex);
+                    // Enable pay button only for PENDING reservations
+                    payButton.setEnabled("PENDING".equals(status));
+                } else {
+                    payButton.setEnabled(false);
+                }
+            }
+        });
 
         return panel;
     }
@@ -164,36 +210,62 @@ public class ReservationGUI extends JFrame {
     }
 
     private void refreshCustomerReservations() {
-        if (customerIdField.getText().trim().isEmpty()) {
-            JOptionPane.showMessageDialog(this,
-                    "Please enter a customer ID to search",
-                    "Input Required",
-                    JOptionPane.INFORMATION_MESSAGE);
+        // Ensure we have a valid customer ID
+        if (!"ADMIN".equals(currentRole) && currentCustomerId == null) {
+            updateStatus("Error: No customer ID available");
             return;
         }
 
-        try {
-            int customerId = Integer.parseInt(customerIdField.getText().trim());
-            tableModel.setRowCount(0);
-            List<Map<String, Object>> reservations = myAgent.getCustomerReservations(customerId);
-            populateReservationsTable(reservations);
-            updateStatus("Loaded reservations for customer ID: " + customerId);
-        } catch (NumberFormatException e) {
-            updateStatus("Please enter a valid customer ID");
+        int customerId;
+        if ("ADMIN".equals(currentRole)) {
+            // For admin, get customer ID from the text field
+            if (customerIdField.getText().trim().isEmpty()) {
+                JOptionPane.showMessageDialog(this,
+                        "Please enter a customer ID to search",
+                        "Input Required",
+                        JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+            try {
+                customerId = Integer.parseInt(customerIdField.getText().trim());
+            } catch (NumberFormatException e) {
+                updateStatus("Please enter a valid customer ID");
+                return;
+            }
+        } else {
+            // For normal users, use their own customer ID
+            customerId = currentCustomerId;
         }
+
+        tableModel.setRowCount(0);
+        List<Map<String, Object>> reservations = myAgent.getCustomerReservations(customerId);
+        populateReservationsTable(reservations);
+        updateStatus("Loaded reservations for customer ID: " + customerId);
     }
 
     private void populateReservationsTable(List<Map<String, Object>> reservations) {
         for (Map<String, Object> reservation : reservations) {
-            Object[] row = {
-                    reservation.get("reservationId"),
-                    reservation.get("customerId"),    // Added Customer ID column
-                    reservation.get("vehicle"),
-                    reservation.get("startDate"),
-                    reservation.get("endDate"),
-                    reservation.get("status"),
-                    String.format("$%.2f", reservation.get("totalCost"))
-            };
+            Object[] row;
+            if ("ADMIN".equals(currentRole)) {
+                row = new Object[]{
+                        reservation.get("reservationId"),
+                        reservation.get("customerId"),
+                        reservation.get("vehicle"),
+                        reservation.get("startDate"),
+                        reservation.get("endDate"),
+                        reservation.get("status"),
+                        String.format("$%.2f", reservation.get("totalCost"))
+                };
+            } else {
+                row = new Object[]{
+                        reservation.get("reservationId"),
+                        reservation.get("vehicle"),
+                        reservation.get("startDate"),
+                        reservation.get("endDate"),
+                        reservation.get("status"),
+                        String.format("$%.2f", reservation.get("totalCost"))
+                };
+            }
             tableModel.addRow(row);
         }
     }
@@ -211,7 +283,7 @@ public class ReservationGUI extends JFrame {
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.anchor = GridBagConstraints.WEST;
 
-        // Customer ID
+        // Only show Customer ID field for admin role
         if ("ADMIN".equals(currentRole)) {
             gbc.gridx = 0; gbc.gridy = 0;
             JLabel customerLabel = createStyledLabel("Customer ID:");
@@ -222,7 +294,8 @@ public class ReservationGUI extends JFrame {
         }
 
         // Vehicle Selection
-        gbc.gridx = 0; gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridy = "ADMIN".equals(currentRole) ? 1 : 0;  // Adjust gridy based on role
         JLabel vehicleLabel = createStyledLabel("Vehicle:");
         formPanel.add(vehicleLabel, gbc);
         gbc.gridx = 1;
@@ -232,7 +305,7 @@ public class ReservationGUI extends JFrame {
         vehicleComboBox.addActionListener(e -> updateTotalCost());
         formPanel.add(vehicleComboBox, gbc);
 
-        // Start Date - Changed label to show date-only format
+        // Rest of the form components with adjusted gridy values
         gbc.gridx = 0; gbc.gridy++;
         JLabel startLabel = createStyledLabel("Start Date (yyyy-MM-dd):");
         formPanel.add(startLabel, gbc);
@@ -246,7 +319,6 @@ public class ReservationGUI extends JFrame {
         });
         formPanel.add(startDateField, gbc);
 
-        // End Date - Changed label to show date-only format
         gbc.gridx = 0; gbc.gridy++;
         JLabel endLabel = createStyledLabel("End Date (yyyy-MM-dd):");
         formPanel.add(endLabel, gbc);
@@ -260,7 +332,6 @@ public class ReservationGUI extends JFrame {
         });
         formPanel.add(endDateField, gbc);
 
-        // Total Cost
         gbc.gridx = 0; gbc.gridy++;
         JLabel costLabel = createStyledLabel("Total Cost ($):");
         formPanel.add(costLabel, gbc);
@@ -385,7 +456,12 @@ public class ReservationGUI extends JFrame {
         Map<String, String> reservationData = new HashMap<>();
         VehicleItem selectedVehicle = (VehicleItem)vehicleComboBox.getSelectedItem();
 
-        reservationData.put("customerId", customerIdField.getText().trim());
+        // Use current customer ID for normal users, or text field for admin
+        String customerId = "ADMIN".equals(currentRole) ?
+                customerIdField.getText().trim() :
+                currentCustomerId.toString();
+
+        reservationData.put("customerId", customerId);
         reservationData.put("vehicleId", String.valueOf(selectedVehicle.getId()));
         reservationData.put("startDate", startDateField.getText().trim());
         reservationData.put("endDate", endDateField.getText().trim());
@@ -470,7 +546,10 @@ public class ReservationGUI extends JFrame {
     }
 
     private void clearForm() {
-        customerIdField.setText("");
+        // Only clear customerIdField if admin role
+        if ("ADMIN".equals(currentRole) && customerIdField != null) {
+            customerIdField.setText("");
+        }
         startDateField.setText("");
         endDateField.setText("");
         totalCostField.setText("");
@@ -481,7 +560,8 @@ public class ReservationGUI extends JFrame {
     }
 
     private boolean validateForm() {
-        if (customerIdField.getText().trim().isEmpty() ||
+        // Validate required fields based on role
+        if (("ADMIN".equals(currentRole) && customerIdField.getText().trim().isEmpty()) ||
                 startDateField.getText().trim().isEmpty() ||
                 endDateField.getText().trim().isEmpty() ||
                 totalCostField.getText().trim().isEmpty()) {
@@ -494,7 +574,12 @@ public class ReservationGUI extends JFrame {
         }
 
         try {
-            Integer.parseInt(customerIdField.getText().trim());
+            // Validate customer ID only for admin
+            if ("ADMIN".equals(currentRole)) {
+                Integer.parseInt(customerIdField.getText().trim());
+            }
+
+            // Validate dates for all users
             LocalDate startDate = LocalDate.parse(startDateField.getText().trim(), dateFormatter);
             LocalDate endDate = LocalDate.parse(endDateField.getText().trim(), dateFormatter);
 
@@ -516,25 +601,34 @@ public class ReservationGUI extends JFrame {
         return true;
     }
 
-    private void refreshData() {
-        // Refresh vehicle list
-        vehicleComboBox.removeAllItems();
-        List<Map<String, Object>> vehicles = myAgent.getAvailableVehicles();
-        for (Map<String, Object> vehicle : vehicles) {
-            vehicleComboBox.addItem(new VehicleItem(
-                    (Integer)vehicle.get("vehicleId"),
-                    String.format("%s %s %d ($%.2f/day)",
-                            vehicle.get("make"),
-                            vehicle.get("model"),
-                            vehicle.get("year"),
-                            vehicle.get("dailyRate")),
-                    (Double)vehicle.get("dailyRate")
-            ));
-        }
 
-        // Refresh all reservations
-        refreshAllReservations();
-    }
+    private void refreshData() {
+            // Refresh vehicle list
+            vehicleComboBox.removeAllItems();
+            List<Map<String, Object>> vehicles = myAgent.getAvailableVehicles();
+            for (Map<String, Object> vehicle : vehicles) {
+                vehicleComboBox.addItem(new VehicleItem(
+                        (Integer)vehicle.get("vehicleId"),
+                        String.format("%s %s %d ($%.2f/day)",
+                                vehicle.get("make"),
+                                vehicle.get("model"),
+                                vehicle.get("year"),
+                                vehicle.get("dailyRate")),
+                        (Double)vehicle.get("dailyRate")
+                ));
+            }
+
+            // Refresh reservations based on user role
+            if ("ADMIN".equals(currentRole)) {
+                refreshAllReservations();
+            } else if (currentCustomerId != null) {
+                // For normal users, only show their reservations
+                tableModel.setRowCount(0);
+                List<Map<String, Object>> reservations = myAgent.getCustomerReservations(currentCustomerId);
+                populateReservationsTable(reservations);
+                updateStatus("Loaded reservations for user ID: " + currentCustomerId);
+            }
+        }
 
     public void updateStatus(String message) {
         SwingUtilities.invokeLater(() -> {
