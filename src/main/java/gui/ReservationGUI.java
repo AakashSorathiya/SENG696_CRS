@@ -32,10 +32,14 @@ public class ReservationGUI extends JFrame {
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm");
     private final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private JButton payButton;
+    private String currentRole;
+    private Integer currentCustomerId;
 
-    public ReservationGUI(ReservationAgent agent) {
+    public ReservationGUI(ReservationAgent agent, String role, Integer customerId) {
         super("Car Rental System - Reservations");
         this.myAgent = agent;
+        this.currentRole = role;
+        this.currentCustomerId = customerId;
         setupGUI();
         refreshData();
     }
@@ -139,10 +143,12 @@ public class ReservationGUI extends JFrame {
         cancelButton = createStyledButton("Cancel Selected");
         cancelButton.addActionListener(e -> cancelSelectedReservation());
 
-        buttonPanel.add(refreshAllButton);
-        buttonPanel.add(searchButton);
+        if ("ADMIN".equals(currentRole)) {
+            buttonPanel.add(refreshAllButton);
+            buttonPanel.add(searchButton);
+        }
+
         buttonPanel.add(cancelButton);
-        buttonPanel.add(payButton);
 
         panel.add(new JScrollPane(reservationsTable), BorderLayout.CENTER);
         panel.add(buttonPanel, BorderLayout.SOUTH);
@@ -206,12 +212,14 @@ public class ReservationGUI extends JFrame {
         gbc.anchor = GridBagConstraints.WEST;
 
         // Customer ID
-        gbc.gridx = 0; gbc.gridy = 0;
-        JLabel customerLabel = createStyledLabel("Customer ID:");
-        formPanel.add(customerLabel, gbc);
-        gbc.gridx = 1;
-        customerIdField = createStyledTextField();
-        formPanel.add(customerIdField, gbc);
+        if ("ADMIN".equals(currentRole)) {
+            gbc.gridx = 0; gbc.gridy = 0;
+            JLabel customerLabel = createStyledLabel("Customer ID:");
+            formPanel.add(customerLabel, gbc);
+            gbc.gridx = 1;
+            customerIdField = createStyledTextField();
+            formPanel.add(customerIdField, gbc);
+        }
 
         // Vehicle Selection
         gbc.gridx = 0; gbc.gridy++;
@@ -383,7 +391,7 @@ public class ReservationGUI extends JFrame {
         reservationData.put("endDate", endDateField.getText().trim());
         reservationData.put("totalCost", totalCostField.getText().trim().replace("$", ""));
 
-        if (myAgent.createReservation(reservationData)) {
+        if (myAgent.createReservation(reservationData, currentRole, currentCustomerId)) {
             updateStatus("Reservation created successfully");
             clearForm();
             refreshData();

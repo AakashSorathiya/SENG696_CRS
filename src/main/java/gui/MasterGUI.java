@@ -5,15 +5,18 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import javax.swing.border.EmptyBorder;
+import java.util.Map;
 
 public class MasterGUI extends JFrame {
     private MasterAgent myAgent;
     private JTextArea logArea;
     private JPanel buttonPanel;
+    private Map<String, Object> currentUser;
 
-    public MasterGUI(MasterAgent agent) {
+    public MasterGUI(MasterAgent agent, Map<String, Object> user) {
         super("Car Rental Management System");
         this.myAgent = agent;
+        this.currentUser = user;
         setupGUI();
     }
 
@@ -31,7 +34,7 @@ public class MasterGUI extends JFrame {
         mainPanel.setBorder(new EmptyBorder(20, 20, 20, 20));
         setContentPane(mainPanel);
 
-        // Header Panel
+        // Header Panel with user info
         mainPanel.add(createHeaderPanel(), BorderLayout.NORTH);
 
         // Center Panel with Buttons
@@ -49,20 +52,36 @@ public class MasterGUI extends JFrame {
     private JPanel createHeaderPanel() {
         JPanel headerPanel = new JPanel(new BorderLayout(10, 10));
 
+        // Title and User Info Panel
+        JPanel titleUserPanel = new JPanel(new GridLayout(3, 1, 5, 5));
+
         // Title
         JLabel titleLabel = new JLabel("Car Rental Management System");
         titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
         titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
-        titleLabel.setBorder(new EmptyBorder(0, 0, 20, 0));
 
-        headerPanel.add(titleLabel, BorderLayout.CENTER);
+        // User Info
+        JLabel userLabel = new JLabel("Welcome, " + currentUser.get("username"));
+        userLabel.setFont(new Font("Arial", Font.PLAIN, 14));
+        userLabel.setHorizontalAlignment(SwingConstants.CENTER);
 
-        // Subtitle
-        JLabel subtitleLabel = new JLabel("Select an operation to continue");
-        subtitleLabel.setFont(new Font("Arial", Font.PLAIN, 16));
-        subtitleLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        // Role Info
+        JLabel roleLabel = new JLabel("Role: " + currentUser.get("role"));
+        roleLabel.setFont(new Font("Arial", Font.ITALIC, 12));
+        roleLabel.setHorizontalAlignment(SwingConstants.CENTER);
 
-        headerPanel.add(subtitleLabel, BorderLayout.SOUTH);
+        titleUserPanel.add(titleLabel);
+        titleUserPanel.add(userLabel);
+        titleUserPanel.add(roleLabel);
+
+        headerPanel.add(titleUserPanel, BorderLayout.CENTER);
+
+        // Logout Button
+        JPanel logoutPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton logoutButton = new JButton("Logout");
+        logoutButton.addActionListener(e -> logout());
+        logoutPanel.add(logoutButton);
+        headerPanel.add(logoutPanel, BorderLayout.EAST);
 
         return headerPanel;
     }
@@ -75,21 +94,38 @@ public class MasterGUI extends JFrame {
         gbc.weightx = 1.0;
         gbc.weighty = 1.0;
 
-        // Create buttons with icons and descriptions
-        String[][] buttonInfo = {
-                {"Registration", "Manage customer registrations and profiles", "1"},
-                {"Reservations", "Book and manage car reservations", "2"},
-                {"Vehicle Management", "Manage vehicle inventory and maintenance", "3"},
-                {"Payments", "Process payments and handle billing", "4"}
-        };
+        boolean isAdmin = "ADMIN".equals(currentUser.get("role"));
 
-        for (int i = 0; i < buttonInfo.length; i++) {
-            gbc.gridx = i % 2;
-            gbc.gridy = i / 2;
-            centerPanel.add(createModuleButton(buttonInfo[i][0], buttonInfo[i][1], Integer.parseInt(buttonInfo[i][2])), gbc);
+        // Define buttons based on user role
+        if (isAdmin) {
+            // Admin sees all options
+            String[][] buttonInfo = {
+                    {"Registration", "Manage customer registrations and profiles", "1"},
+                    {"Reservations", "Book and manage car reservations", "2"},
+                    {"Vehicle Management", "Manage vehicle inventory and maintenance", "3"},
+                    {"Payments", "Process payments and handle billing", "4"}
+            };
+            addButtons(centerPanel, gbc, buttonInfo);
+        } else {
+            // Regular user sees limited options
+            String[][] buttonInfo = {
+                    {"My Profile", "View and update your profile", "1"},
+                    {"Make Reservation", "Book a car reservation", "2"},
+                    {"My Payments", "View and manage your payments", "4"}
+            };
+            addButtons(centerPanel, gbc, buttonInfo);
         }
 
         return centerPanel;
+    }
+
+    private void addButtons(JPanel panel, GridBagConstraints gbc, String[][] buttonInfo) {
+        for (int i = 0; i < buttonInfo.length; i++) {
+            gbc.gridx = i % 2;
+            gbc.gridy = i / 2;
+            panel.add(createModuleButton(buttonInfo[i][0], buttonInfo[i][1],
+                    Integer.parseInt(buttonInfo[i][2])), gbc);
+        }
     }
 
     private JPanel createModuleButton(String title, String description, int choice) {
@@ -125,7 +161,8 @@ public class MasterGUI extends JFrame {
         });
 
         // Add description label
-        JLabel descLabel = new JLabel("<html><div style='text-align: center;'>" + description + "</div></html>");
+        JLabel descLabel = new JLabel("<html><div style='text-align: center;'>" +
+                description + "</div></html>");
         descLabel.setFont(new Font("Arial", Font.PLAIN, 12));
         descLabel.setHorizontalAlignment(SwingConstants.CENTER);
         descLabel.setBorder(new EmptyBorder(5, 0, 0, 0));
@@ -161,6 +198,20 @@ public class MasterGUI extends JFrame {
         logPanel.add(clearButton, BorderLayout.EAST);
 
         return logPanel;
+    }
+
+    private void logout() {
+        int confirm = JOptionPane.showConfirmDialog(
+                this,
+                "Are you sure you want to logout?",
+                "Confirm Logout",
+                JOptionPane.YES_NO_OPTION
+        );
+
+        if (confirm == JOptionPane.YES_OPTION) {
+            this.dispose();
+            myAgent.handleLogout();  // New method call instead of doDelete()
+        }
     }
 
     public void updateLog(String message) {

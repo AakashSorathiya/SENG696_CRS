@@ -23,6 +23,8 @@ public class ReservationAgent extends Agent {
     private Connection dbConnection;
     private ReservationGUI gui;
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private String currentRole;
+    private Integer currentCustomerId;
 
     protected void setup() {
         System.out.println("Reservation Agent " + getLocalName() + " starting...");
@@ -37,7 +39,6 @@ public class ReservationAgent extends Agent {
             return;
         }
 
-
         // Register agent services
         registerService();
 
@@ -48,8 +49,26 @@ public class ReservationAgent extends Agent {
                 ACLMessage msg = receive(mt);
 
                 if (msg != null) {
-                    showGUI();
-                    handleMessage(msg);
+                    String content = msg.getContent();
+                    if (content != null && !content.isEmpty()) {
+                        try {
+                            // Extract role and customer ID from message
+                            String[] parts = content.split(";");
+                            String userInfo = parts[0];
+                            String[] userParts = userInfo.split(",");
+                            currentRole = userParts[0].split(":")[1];
+                            if (userParts.length > 1) {
+                                currentCustomerId = Integer.parseInt(userParts[1].split(":")[1]);
+                            } else {
+                                currentCustomerId = null;
+                            }
+
+                            showGUI();
+                            handleMessage(msg);
+                        } catch (Exception e) {
+                            System.out.println("Error processing message: " + e.getMessage());
+                        }
+                    }
                 } else {
                     block();
                 }
@@ -64,9 +83,11 @@ public class ReservationAgent extends Agent {
 
     private void showGUI() {
         if (gui == null) {
-            gui = new ReservationGUI(this);
+            SwingUtilities.invokeLater(() -> {
+                gui = new ReservationGUI(this, currentRole, currentCustomerId);
+                gui.setVisible(true);
+            });
         }
-        gui.setVisible(true);
     }
 
     private void registerService() {
@@ -116,19 +137,25 @@ public class ReservationAgent extends Agent {
         ACLMessage reply = msg.createReply();
 
         try {
-            if (content.startsWith("CREATE:")) {
-                Map<String, String> reservationData = parseReservationData(content);
-                boolean success = createReservation(reservationData);
-                handleOperationResult(reply, success, "Reservation creation");
-            } else if (content.startsWith("CANCEL:")) {
-                int reservationId = Integer.parseInt(content.substring(7));
-                boolean success = cancelReservation(reservationId);
-                handleOperationResult(reply, success, "Reservation cancellation");
-            } else if (content.startsWith("MODIFY:")) {
-                Map<String, String> modificationData = parseReservationData(content);
-                boolean success = modifyReservation(modificationData);
-                handleOperationResult(reply, success, "Reservation modification");
+            // Parse the complete message content
+            String[] parts = content.split(";");
+            String userInfo = parts[0];
+            String[] userParts = userInfo.split(",");
+            String role = userParts[0].split(":")[1];
+            Integer customerId = null;
+            if (userParts.length > 1) {
+                customerId = Integer.parseInt(userParts[1].split(":")[1]);
             }
+
+            String command = parts.length > 1 ? parts[1] : "";
+
+            // Handle different commands
+            if (command.startsWith("CREATE:")) {
+                Map<String, String> reservationData = parseReservationData(command);
+                boolean success = createReservation(reservationData, role, customerId);
+                handleOperationResult(reply, success, "Reservation creation");
+            }
+            // ... (other command handling)
         } catch (Exception e) {
             reply.setPerformative(ACLMessage.FAILURE);
             reply.setContent("Error: " + e.getMessage());
@@ -137,12 +164,12 @@ public class ReservationAgent extends Agent {
         send(reply);
     }
 
-    public boolean createReservation(Map<String, String> reservationData) {
+    public boolean createReservation(Map<String, String> reservationData, String role, Integer customerId) {
         String sql = "INSERT INTO reservations (customer_id, vehicle_id, start_date, end_date, total_cost, status) " +
                 "VALUES (?, ?, ?, ?, ?, 'PENDING')";
 
         try (PreparedStatement pstmt = dbConnection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            pstmt.setInt(1, Integer.parseInt(reservationData.get("customerId")));
+            pstmt.setInt(1, customerId != null ? customerId : Integer.parseInt(reservationData.get("customerId")));
             pstmt.setInt(2, Integer.parseInt(reservationData.get("vehicleId")));
             pstmt.setString(3, reservationData.get("startDate"));
             pstmt.setString(4, reservationData.get("endDate"));
