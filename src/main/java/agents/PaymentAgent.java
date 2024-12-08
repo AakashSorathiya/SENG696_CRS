@@ -17,6 +17,8 @@ import java.util.*;
 public class PaymentAgent extends Agent {
     private Connection dbConnection;
     private PaymentGUI gui;
+    private String currentRole;
+    private Integer currentCustomerId;
 
     protected void setup() {
         setupDatabase();
@@ -28,35 +30,28 @@ public class PaymentAgent extends Agent {
                 ACLMessage msg = receive(mt);
 
                 if (msg != null) {
-                    showGUI();
                     String content = msg.getContent();
-                    ACLMessage reply = msg.createReply();
-
-                    try {
-                        if (content.startsWith("PROCESS:")) {
-                            Map<String, String> paymentData = parsePaymentData(content);
-                            boolean success = processPayment(paymentData);
-                            if (success) {
-                                reply.setPerformative(ACLMessage.INFORM);
-                                reply.setContent("Payment processing successful:" + paymentData.get("reservationId"));
-                            } else {
-                                reply.setPerformative(ACLMessage.FAILURE);
-                                reply.setContent("Payment processing failed");
+                    if (content != null && !content.isEmpty()) {
+                        try {
+                            // Extract role and customer ID from message
+                            if (content.startsWith("ROLE:")) {
+                                String[] parts = content.split(",");
+                                currentRole = parts[0].substring(5); // Remove "ROLE:"
+                                if (parts.length > 1) {
+                                    String customerIdStr = parts[1].substring(12); // Remove "CUSTOMER_ID:"
+                                    currentCustomerId = Integer.parseInt(customerIdStr);
+                                    if (currentCustomerId == -1) {
+                                        currentCustomerId = null;
+                                    }
+                                }
+                                showGUI();
+                            } else if ("SHOW_PAYMENT_GUI".equals(content)) {
+                                showGUI();
                             }
-                        } else if (content.startsWith("REFUND:")) {
-                            int paymentId = Integer.parseInt(content.substring(7));
-                            boolean success = processRefund(paymentId);
-                            handleOperationResult(reply, success, "Refund processing");
-                        }
-                    } catch (Exception e) {
-                        reply.setPerformative(ACLMessage.FAILURE);
-                        reply.setContent("Error: " + e.getMessage());
-                        if (gui != null) {
-                            gui.updateStatus("Error processing request: " + e.getMessage());
+                        } catch (Exception e) {
+                            System.out.println("Error processing message: " + e.getMessage());
                         }
                     }
-
-                    send(reply);
                 } else {
                     block();
                 }
@@ -71,7 +66,7 @@ public class PaymentAgent extends Agent {
 
     private void showGUI() {
         if (gui == null) {
-            gui = new PaymentGUI(this);
+            gui = new PaymentGUI(this, currentRole, currentCustomerId);
         }
         gui.setVisible(true);
     }
@@ -110,6 +105,52 @@ public class PaymentAgent extends Agent {
         if (gui != null) {
             gui.dispose();
             gui = null;
+        }
+    }
+
+    public boolean requestRefund(int paymentId) {
+        // First check if the payment is eligible for refund request
+        String checkSql = "SELECT payment_status FROM payments WHERE payment_id = ?";
+
+        try (PreparedStatement checkStmt = dbConnection.prepareStatement(checkSql)) {
+            checkStmt.setInt(1, paymentId);
+            ResultSet rs = checkStmt.executeQuery();
+
+            if (rs.next()) {
+                String status = rs.getString("payment_status");
+                if (!"COMPLETED".equals(status)) {
+                    if (gui != null) {
+                        gui.updateStatus("Cannot request refund: payment must be in COMPLETED status");
+                    }
+                    return false;
+                }
+
+                // If payment is eligible, update status to REFUND_REQUESTED
+                String updateSql = "UPDATE payments SET payment_status = 'REFUND_REQUESTED' WHERE payment_id = ?";
+                try (PreparedStatement updateStmt = dbConnection.prepareStatement(updateSql)) {
+                    updateStmt.setInt(1, paymentId);
+
+                    int result = updateStmt.executeUpdate();
+                    if (result > 0) {
+                        if (gui != null) {
+                            gui.updateStatus("Refund requested successfully for payment ID " + paymentId);
+                        }
+                        return true;
+                    }
+                }
+            }
+
+            if (gui != null) {
+                gui.updateStatus("Failed to request refund for payment ID " + paymentId);
+            }
+            return false;
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            if (gui != null) {
+                gui.updateStatus("Error requesting refund: " + e.getMessage());
+            }
+            return false;
         }
     }
 
@@ -165,9 +206,9 @@ public class PaymentAgent extends Agent {
 
             if (rs.next()) {
                 String status = rs.getString("payment_status");
-                if (!"COMPLETED".equals(status)) {
+                if (!"REFUND_REQUESTED".equals(status)) {
                     if (gui != null) {
-                        gui.updateStatus("Cannot refund payment: payment must be in COMPLETED status");
+                        gui.updateStatus("Cannot process refund: payment must be in REFUND_REQUESTED status");
                     }
                     return false;
                 }
@@ -207,22 +248,49 @@ public class PaymentAgent extends Agent {
 
     public List<Map<String, Object>> getPaymentHistory() {
         List<Map<String, Object>> payments = new ArrayList<>();
-        String sql = "SELECT p.*, r.customer_id, r.status as reservation_status, " +
-                "c.first_name, c.last_name, " +
-                "v.make, v.model, v.year " +
-                "FROM payments p " +
-                "JOIN reservations r ON p.reservation_id = r.reservation_id " +
-                "JOIN customers c ON r.customer_id = c.customer_id " +
-                "JOIN vehicles v ON r.vehicle_id = v.vehicle_id " +
-                "ORDER BY p.payment_date DESC";
+        String sql;
 
-        try (Statement stmt = dbConnection.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
+        if ("ADMIN".equals(currentRole)) {
+            // Admin can see all payments
+            sql = "SELECT p.*, r.customer_id, r.status as reservation_status, " +
+                    "c.first_name, c.last_name, " +
+                    "v.make, v.model, v.year " +
+                    "FROM payments p " +
+                    "JOIN reservations r ON p.reservation_id = r.reservation_id " +
+                    "JOIN customers c ON r.customer_id = c.customer_id " +
+                    "JOIN vehicles v ON r.vehicle_id = v.vehicle_id " +
+                    "ORDER BY p.payment_date DESC";
+        } else {
+            // Regular users can only see their own payments
+            sql = "SELECT p.*, r.customer_id, r.status as reservation_status, " +
+                    "c.first_name, c.last_name, " +
+                    "v.make, v.model, v.year " +
+                    "FROM payments p " +
+                    "JOIN reservations r ON p.reservation_id = r.reservation_id " +
+                    "JOIN customers c ON r.customer_id = c.customer_id " +
+                    "JOIN vehicles v ON r.vehicle_id = v.vehicle_id " +
+                    "WHERE r.customer_id = ? " +
+                    "ORDER BY p.payment_date DESC";
+        }
+
+        try {
+            PreparedStatement stmt;
+            ResultSet rs;
+
+            if ("ADMIN".equals(currentRole)) {
+                stmt = dbConnection.prepareStatement(sql);
+                rs = stmt.executeQuery();
+            } else {
+                stmt = dbConnection.prepareStatement(sql);
+                stmt.setInt(1, currentCustomerId);
+                rs = stmt.executeQuery();
+            }
 
             while (rs.next()) {
                 Map<String, Object> payment = new HashMap<>();
                 payment.put("paymentId", rs.getInt("payment_id"));
                 payment.put("reservationId", rs.getInt("reservation_id"));
+                payment.put("customerId", rs.getInt("customer_id"));
                 payment.put("customerName", rs.getString("first_name") + " " + rs.getString("last_name"));
                 payment.put("vehicleInfo", String.format("%d %s %s",
                         rs.getInt("year"), rs.getString("make"), rs.getString("model")));
@@ -234,6 +302,9 @@ public class PaymentAgent extends Agent {
                 payment.put("reservationStatus", rs.getString("reservation_status"));
                 payments.add(payment);
             }
+
+            rs.close();
+            stmt.close();
         } catch (SQLException e) {
             e.printStackTrace();
             if (gui != null) {

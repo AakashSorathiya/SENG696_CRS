@@ -392,8 +392,11 @@ public class ReservationGUI extends JFrame {
     private void initiatePayment() {
         int selectedRow = reservationsTable.getSelectedRow();
         if (selectedRow != -1) {
+            // Get the correct column index based on role
+            int costColumnIndex = "ADMIN".equals(currentRole) ? 6 : 5;
+
             int reservationId = (Integer) tableModel.getValueAt(selectedRow, 0);
-            double totalCost = Double.parseDouble(((String) tableModel.getValueAt(selectedRow, 6))
+            double totalCost = Double.parseDouble(((String) tableModel.getValueAt(selectedRow, costColumnIndex))
                     .replace("$", "").trim());
 
             // Create pending payment record

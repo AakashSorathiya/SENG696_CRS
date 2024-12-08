@@ -21,11 +21,15 @@ public class PaymentGUI extends JFrame {
     private DefaultTableModel tableModel;
     private JTextArea statusArea;
     private final SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+    private String currentRole;
+    private Integer currentCustomerId;
 
-
-    public PaymentGUI(PaymentAgent agent) {
-        super("Car Rental System - Payment Management");
+    public PaymentGUI(PaymentAgent agent, String role, Integer customerId) {
+        super(role.equals("ADMIN") ? "Car Rental System - Payment Management" : "Car Rental System - My Payments");
         this.myAgent = agent;
+        this.currentRole = role;
+        this.currentCustomerId = customerId;
+
 
         // Main panel with spacing
         JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
@@ -120,21 +124,85 @@ public class PaymentGUI extends JFrame {
         panel.setBorder(BorderFactory.createEmptyBorder(10, 0, 0, 0));
 
         addButton(panel, "Process Payment", e -> processPayment());
-        addButton(panel, "Process Refund", e -> processRefund());
+
+        // Add different refund buttons based on role
+        if ("ADMIN".equals(currentRole)) {
+            addButton(panel, "Process Refund", e -> processRefund());
+        } else {
+            addButton(panel, "Request Refund", e -> requestRefund());
+        }
+
         addButton(panel, "Refresh", e -> refreshPaymentTable());
         addButton(panel, "Clear Form", e -> clearForm());
 
         return panel;
     }
 
+    private void requestRefund() {
+        int selectedRow = paymentsTable.getSelectedRow();
+        if (selectedRow == -1) {
+            updateStatus("Please select a payment to request refund");
+            return;
+        }
+
+        int paymentId = (Integer) tableModel.getValueAt(selectedRow, 0);
+        String currentStatus = (String) tableModel.getValueAt(selectedRow, "ADMIN".equals(currentRole) ? 8 : 6);
+
+        // Check if payment is eligible for refund request
+        if (!"COMPLETED".equals(currentStatus)) {
+            String message = currentStatus.equals("REFUNDED") ?
+                    "This payment has already been refunded" :
+                    currentStatus.equals("REFUND_REQUESTED") ?
+                            "Refund has already been requested for this payment" :
+                            "Only completed payments can be requested for refund";
+
+            JOptionPane.showMessageDialog(
+                    this,
+                    message,
+                    "Refund Request Not Allowed",
+                    JOptionPane.WARNING_MESSAGE
+            );
+            updateStatus(message);
+            return;
+        }
+
+        int confirm = JOptionPane.showConfirmDialog(
+                this,
+                "Are you sure you want to request a refund for this payment?",
+                "Confirm Refund Request",
+                JOptionPane.YES_NO_OPTION
+        );
+
+        if (confirm == JOptionPane.YES_OPTION) {
+            if (myAgent.requestRefund(paymentId)) {
+                updateStatus("Refund request submitted successfully");
+                refreshPaymentTable();
+            } else {
+                updateStatus("Failed to submit refund request");
+            }
+        }
+    }
+
     private JPanel createTablePanel() {
         JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Payment History"));
+        panel.setBorder(BorderFactory.createTitledBorder(
+                "ADMIN".equals(currentRole) ? "Payment History" : "My Payments"
+        ));
 
-        String[] columnNames = {
-                "Payment ID", "Reservation ID", "Customer ID", "Amount",
-                "Payment Date", "Method", "Status", "Transaction Ref"
-        };
+        String[] columnNames;
+        if ("ADMIN".equals(currentRole)) {
+            columnNames = new String[]{
+                    "Payment ID", "Reservation ID", "Customer ID", "Customer Name", "Vehicle",
+                    "Amount", "Payment Date", "Method", "Status", "Transaction Ref"
+            };
+        } else {
+            // Regular users don't need to see customer ID and name
+            columnNames = new String[]{
+                    "Payment ID", "Reservation ID", "Vehicle",
+                    "Amount", "Payment Date", "Method", "Status", "Transaction Ref"
+            };
+        }
+
         tableModel = new DefaultTableModel(columnNames, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -146,23 +214,19 @@ public class PaymentGUI extends JFrame {
         paymentsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         paymentsTable.getSelectionModel().addListSelectionListener(e -> fillFormFromSelection());
 
-        // Configure the amount column to right-align and format as currency
-        paymentsTable.getColumnModel().getColumn(3).setCellRenderer(new DefaultTableCellRenderer() {
-            {
-                setHorizontalAlignment(SwingConstants.RIGHT);
-            }
-            @Override
-            public void setValue(Object value) {
-                setText(value instanceof Double ? String.format("$%.2f", value) : "");
-            }
-        });
+        // Configure column renderers for better display
+        DefaultTableCellRenderer rightAlignRenderer = new DefaultTableCellRenderer();
+        rightAlignRenderer.setHorizontalAlignment(SwingConstants.RIGHT);
+
+        // Set up column widths and renderers
+        if ("ADMIN".equals(currentRole)) {
+            paymentsTable.getColumnModel().getColumn(5).setCellRenderer(rightAlignRenderer); // Amount
+        } else {
+            paymentsTable.getColumnModel().getColumn(3).setCellRenderer(rightAlignRenderer); // Amount
+        }
 
         JScrollPane scrollPane = new JScrollPane(paymentsTable);
         panel.add(scrollPane, BorderLayout.CENTER);
-
-        // Add some padding
-        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-
         return panel;
     }
 
@@ -240,10 +304,15 @@ public class PaymentGUI extends JFrame {
     private void fillFormFromSelection() {
         int selectedRow = paymentsTable.getSelectedRow();
         if (selectedRow >= 0) {
-            reservationIdField.setText(tableModel.getValueAt(selectedRow, 1).toString());
-            Double amount = (Double) tableModel.getValueAt(selectedRow, 3);
-            amountField.setText(String.format("%.2f", amount));
-            String status = (String) tableModel.getValueAt(selectedRow, 6);
+            // Get column indices based on role
+            int reservationIdCol = "ADMIN".equals(currentRole) ? 1 : 1;
+            int amountCol = "ADMIN".equals(currentRole) ? 5 : 3;
+            int statusCol = "ADMIN".equals(currentRole) ? 8 : 6;
+
+            reservationIdField.setText(tableModel.getValueAt(selectedRow, reservationIdCol).toString());
+            String amountStr = ((String) tableModel.getValueAt(selectedRow, amountCol)).replace("$", "");
+            amountField.setText(amountStr);
+            String status = (String) tableModel.getValueAt(selectedRow, statusCol);
 
             // Disable editing for non-pending payments
             boolean isPending = "PENDING".equals(status);
@@ -254,20 +323,25 @@ public class PaymentGUI extends JFrame {
     }
 
     private void processRefund() {
+        if (!"ADMIN".equals(currentRole)) {
+            updateStatus("Only administrators can process refunds");
+            return;
+        }
+
         int selectedRow = paymentsTable.getSelectedRow();
         if (selectedRow == -1) {
-            updateStatus("Please select a payment to refund");
+            updateStatus("Please select a payment to process refund");
             return;
         }
 
         int paymentId = (Integer) tableModel.getValueAt(selectedRow, 0);
-        String currentStatus = (String) tableModel.getValueAt(selectedRow, 6);
+        String currentStatus = (String) tableModel.getValueAt(selectedRow, 8); // Admin table has more columns
 
-        // Check if payment is eligible for refund
-        if (!"COMPLETED".equals(currentStatus)) {
-            String message = currentStatus.equals("REFUNDED")
-                    ? "This payment has already been refunded"
-                    : "Only completed payments can be refunded";
+        // Check if payment is eligible for refund processing
+        if (!"REFUND_REQUESTED".equals(currentStatus)) {
+            String message = currentStatus.equals("REFUNDED") ?
+                    "This payment has already been refunded" :
+                    "Only payments with refund requests can be processed";
 
             JOptionPane.showMessageDialog(
                     this,
@@ -330,16 +404,32 @@ public class PaymentGUI extends JFrame {
         List<Map<String, Object>> payments = myAgent.getPaymentHistory();
 
         for (Map<String, Object> payment : payments) {
-            Object[] row = {
-                    payment.get("paymentId"),
-                    payment.get("reservationId"),
-                    payment.get("customerId"),
-                    payment.get("amount"),
-                    dateFormat.format(payment.get("paymentDate")),
-                    payment.get("paymentMethod"),
-                    payment.get("paymentStatus"),
-                    payment.get("transactionReference")
-            };
+            Object[] row;
+            if ("ADMIN".equals(currentRole)) {
+                row = new Object[]{
+                        payment.get("paymentId"),
+                        payment.get("reservationId"),
+                        payment.get("customerId"),
+                        payment.get("customerName"),
+                        payment.get("vehicleInfo"),
+                        String.format("$%.2f", payment.get("amount")),
+                        dateFormat.format(payment.get("paymentDate")),
+                        payment.get("paymentMethod"),
+                        payment.get("paymentStatus"),
+                        payment.get("transactionReference")
+                };
+            } else {
+                row = new Object[]{
+                        payment.get("paymentId"),
+                        payment.get("reservationId"),
+                        payment.get("vehicleInfo"),
+                        String.format("$%.2f", payment.get("amount")),
+                        dateFormat.format(payment.get("paymentDate")),
+                        payment.get("paymentMethod"),
+                        payment.get("paymentStatus"),
+                        payment.get("transactionReference")
+                };
+            }
             tableModel.addRow(row);
         }
     }

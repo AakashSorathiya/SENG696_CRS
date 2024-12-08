@@ -256,14 +256,14 @@ public class MasterAgent extends Agent {
         String content = "";
         AID receiver = null;
 
-        // Always include user info in content
-        String userInfo = "USER:" + currentUser.get("role") +
-                ",ID:" + currentUser.get("customerId");
+        // Format user info to match exactly what PaymentAgent expects
+        String userInfo = String.format("ROLE:%s,CUSTOMER_ID:%s",
+                currentUser.get("role"),
+                currentUser.get("customerId"));
 
         switch (choice) {
             case 1:
-                // For registration/profile, send the user info with REGISTRATION_REQUEST
-                content = userInfo + ";REGISTRATION_REQUEST";  // Add the command part
+                content = userInfo + ";REGISTRATION_REQUEST";
                 receiver = new AID("reg", AID.ISLOCALNAME);
                 break;
             case 2:
@@ -275,7 +275,8 @@ public class MasterAgent extends Agent {
                 receiver = new AID("veh", AID.ISLOCALNAME);
                 break;
             case 4:
-                content = userInfo + ";PAYMENT_REQUEST";
+                // For payment, just send the credentials with exact format matching PaymentAgent
+                content = userInfo;
                 receiver = new AID("pay", AID.ISLOCALNAME);
                 break;
         }
@@ -284,7 +285,7 @@ public class MasterAgent extends Agent {
             msg.setContent(content);
             msg.addReceiver(receiver);
             send(msg);
-            gui.updateLog("Sent request to " + receiver.getLocalName());
+            gui.updateLog("Sent request to " + receiver.getLocalName() + " with content: " + content);
         }
     }
 

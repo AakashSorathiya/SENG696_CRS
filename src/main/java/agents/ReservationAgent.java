@@ -367,7 +367,13 @@ public class ReservationAgent extends Agent {
     public void showPaymentGUI() {
         // Create and send a message to the payment agent
         ACLMessage msg = new ACLMessage(ACLMessage.REQUEST);
-        msg.setContent("SHOW_PAYMENT_GUI");
+
+        // Format the message to include role and customer ID
+        String userInfo = String.format("ROLE:%s,CUSTOMER_ID:%d",
+                currentRole,
+                currentCustomerId != null ? currentCustomerId : -1);
+
+        msg.setContent(userInfo);
 
         // Find the payment agent
         DFAgentDescription template = new DFAgentDescription();
@@ -383,6 +389,9 @@ public class ReservationAgent extends Agent {
             }
         } catch (FIPAException fe) {
             fe.printStackTrace();
+            if (gui != null) {
+                gui.updateStatus("Error connecting to payment service");
+            }
         }
     }
 
