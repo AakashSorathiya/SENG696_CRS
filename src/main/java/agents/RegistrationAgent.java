@@ -210,7 +210,7 @@ public class RegistrationAgent extends Agent {
 
     public void redirectToHome() {
         // Create and send a message to the master agent
-        ACLMessage msg = new ACLMessage(ACLMessage.INFORM);
+        ACLMessage msg = new ACLMessage(ACLMessage.REQUEST);
         msg.setContent("SHOW_HOME_GUI");
 
         // Find the master agent
@@ -322,6 +322,6 @@ public class RegistrationAgent extends Agent {
             gui.dispose();
         }
 
-        System.out.println("Registration Agent " + getAID().getName() + " terminating.");
+        System.out.println("Reservation Agent " + getAID().getName() + " terminating.");
     }
 }

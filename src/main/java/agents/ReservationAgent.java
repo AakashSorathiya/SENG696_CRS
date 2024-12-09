@@ -82,11 +82,20 @@ public class ReservationAgent extends Agent {
     }
 
     private void showGUI() {
-        if (gui == null) {
-            SwingUtilities.invokeLater(() -> {
-                gui = new ReservationGUI(this, currentRole, currentCustomerId);
-                gui.setVisible(true);
-            });
+        SwingUtilities.invokeLater(() -> {
+            if (gui != null) {
+                gui.dispose();  // Dispose of existing GUI if present
+                gui = null;
+            }
+            gui = new ReservationGUI(this, currentRole, currentCustomerId);
+            gui.setVisible(true);
+        });
+    }
+
+    public void cleanupGUIForPayment() {
+        if (gui != null) {
+            gui.dispose();
+            gui = null;
         }
     }
 

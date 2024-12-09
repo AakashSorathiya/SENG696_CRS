@@ -407,9 +407,8 @@ public class ReservationGUI extends JFrame {
 
             if (myAgent.createPendingPayment(paymentData)) {
                 updateStatus("Payment initiated for reservation " + reservationId);
-                // Show payment GUI
+                myAgent.cleanupGUIForPayment();  // Properly cleanup GUI
                 myAgent.showPaymentGUI();
-                this.setVisible(false);
             } else {
                 updateStatus("Failed to initiate payment");
             }

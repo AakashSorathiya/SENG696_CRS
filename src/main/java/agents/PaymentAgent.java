@@ -67,8 +67,11 @@ public class PaymentAgent extends Agent {
     private void showGUI() {
         if (gui == null) {
             gui = new PaymentGUI(this, currentRole, currentCustomerId);
+            gui.setVisible(true);
+        } else {
+            gui.refreshPaymentTable();  // Refresh data if GUI exists
+            gui.setVisible(true);
         }
-        gui.setVisible(true);
     }
 
     private void setupDatabase() {
@@ -81,17 +84,15 @@ public class PaymentAgent extends Agent {
     }
 
     public void redirectToHome() {
-        // Create and send a message to the master agent
         ACLMessage msg = new ACLMessage(ACLMessage.REQUEST);
         msg.setContent("SHOW_HOME_GUI");
 
-        // Find the master agent
-        DFAgentDescription template = new DFAgentDescription();
-        ServiceDescription sd = new ServiceDescription();
-        sd.setType("master");
-        template.addServices(sd);
-
         try {
+            DFAgentDescription template = new DFAgentDescription();
+            ServiceDescription sd = new ServiceDescription();
+            sd.setType("master");
+            template.addServices(sd);
+
             DFAgentDescription[] result = DFService.search(this, template);
             if (result.length > 0) {
                 msg.addReceiver(result[0].getName());
@@ -101,7 +102,7 @@ public class PaymentAgent extends Agent {
             fe.printStackTrace();
         }
 
-        // Dispose of the current GUI
+        // Ensure proper GUI cleanup
         if (gui != null) {
             gui.dispose();
             gui = null;
